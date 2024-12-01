@@ -1,0 +1,26 @@
+# Basic libraries for general functionality
+Flask
+pandas
+numpy
+matplotlib
+APScheduler
+python-dateutil
+pytz
+slack-sdk
+
+# Finance data processing and APIs
+finance-datareader
+beautifulsoup4
+plotly
+krx-holidays
+requests
+
+# Concurrent processing and system monitoring
+psutil
+
+# Google Sheets and Drive integration (if applicable)
+gspread
+google-auth
+
+# Additional utilities for API response parsing and JSON handling
+jsonschema
