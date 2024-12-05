@@ -44,12 +44,12 @@
 - 주가 데이터 소스: FinanceDataReader, KIS API
 - 알림 시스템: Slack SDK
 - 병렬 처리: ProcessPoolExecutor, Multiprocessing
-- 스케줄링: Schedule, Threading
+- 스케줄링: APScheduler
 
 ## 사용 사례
-- 한국 주식 데이터를 활용한 거래 전략 분석 및 최적화.
-- 자동화된 데이터 처리로 투자 전략 수립 시간 단축.
-- Slack 알림으로 시스템 문제를 즉각 대응하여 운영 안정성 강화.
+- 한국 주식 데이터를 활용한 거래 전략 분석 및 최적화
+- 자동화된 데이터 처리로 투자 전략 수립 시간 단축
+- Slack 알림으로 시스템 문제를 즉각 대응하여 운영 안정성 강화
 
 ## 향후 확장 계획
 - 장 시작 후 일별 매수 추천 데이터 생성 및 웹서버 게시
