@@ -21,6 +21,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 
 import os
+import re
 import traceback
 
 
@@ -76,6 +77,11 @@ daily_best_return_per_days_held_csvs_path = lfpc.daily_best_return_per_days_held
 
 daily_progress_final_csvs_path = lfpc.daily_progress_final_csvs_path
 
+daily_reco_win_path = lfpc.daily_reco_win_path
+daily_reco_revenue_path = lfpc.daily_reco_revenue_path
+daily_reco_revenue_per_days_held_path = lfpc.daily_reco_revenue_per_days_held_path
+
+
 # 한국 주식 시장 개장 시간 확인
 def is_market_open():
     now = datetime.now()
@@ -128,6 +134,7 @@ from functools import wraps
 
 # 디렉터리가 존재하지 않으면 생성
 os.makedirs(log_file_path, exist_ok=True)
+
 # 로깅 설정
 logging.basicConfig(
     filename=f'{log_file_path}/function_execution.log',  # 로그를 저장할 파일명
@@ -958,17 +965,19 @@ def process_all_stocks_with_save_optimized(
                                     count_lose = ('lose_dummy', 'sum'),
                                     avg_revenue_per_days_held= ('reach_target_amount_per_days_held', 'mean'),
                                     avg_days_held = ('days_held', 'mean'),
-                                    sum_buy_price = ('buy_price', 'sum'),
-                                    sum_reach_target_price = ('reach_target_price', 'sum'),
-                                    sum_stop_loss_price = ('stop_loss_price', 'sum'),
-                                    sum_maturity_price = ('maturity_price', 'sum'),
-                                    sum_sell_price = ('sell_price', 'sum')
+                                    total_buy_price = ('buy_price', 'sum'),
+                                    total_reach_target_price = ('reach_target_price', 'sum'),
+                                    total_stop_loss_price = ('stop_loss_price', 'sum'),
+                                    total_maturity_price = ('maturity_price', 'sum'),
+                                    total_sell_price = ('sell_price', 'sum')
                                     ).reset_index()
 
                                 df_results['win_rate'] = round(df_results['count_win'] / df_results['count_buy_date'] * 100, 2)
                                 df_results['lose_rate'] = round(df_results['count_lose'] / df_results['count_buy_date'] * 100, 2)
 
-                                df_results['revenue_rate'] = round(((df_results['sum_sell_price']-df_results['sum_buy_price']) / df_results['sum_buy_price'])*100, 2)
+
+                                df_results['total_revenue'] = round(df_results['total_sell_price'] - df_results['total_buy_price'], 0)
+                                df_results['revenue_rate'] = round((df_results['total_revenue'] / df_results['total_buy_price'])*100, 2)
                                 df_results['reach_target_date_count_per_buy_date_count'] = round(df_results['count_reach_target_date'] / df_results['count_buy_date']*100, 2)
                                 df_results['stop_loss_date_count_per_buy_date_count'] = round(df_results['count_stop_loss_date'] / df_results['count_buy_date']*100, 2)
                                 df_results['maturity_date_count_per_buy_date_count'] = round(df_results['count_maturity_date'] / df_results['count_buy_date']*100, 2)
@@ -1033,4 +1042,132 @@ def process_all_stocks_with_save_optimized(
     send_simple_message(message)
     print(message)
 
-# def create_trade_signal_by_investment_target():
+def get_latest_best_file(directory, date_format="%Y%m%d"):
+    """
+    특정 디렉토리 내 파일 목록에서 파일명에 포함된 날짜를 기준으로 가장 최신 파일을 반환합니다.
+    
+    :param directory: 파일이 저장된 디렉토리 경로
+    :param date_format: 파일명에 포함된 날짜의 형식 (기본값: YYYYMMDD)
+    :return: 가장 최신 파일의 경로 또는 None
+    """
+    latest_file = None
+    latest_date = None
+
+    # 디렉토리 내 파일 목록 가져오기
+    try:
+        files = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+    except FileNotFoundError:
+        print(f"디렉토리 {directory}를 찾을 수 없습니다.")
+        return None
+
+    # 파일명에서 날짜 추출 및 최신 파일 찾기
+    for file in files:
+        # 정규표현식으로 날짜 추출
+        match = re.search(r'\d+', file)
+        if match:
+            try:
+                file_date = datetime.strptime(match.group(), date_format)
+                if latest_date is None or file_date > latest_date:
+                    latest_date = file_date
+                    latest_file = file
+            except ValueError:
+                # 날짜 형식에 맞지 않는 경우 무시
+                continue
+
+    if latest_file:
+        return os.path.join(directory, latest_file)
+    else:
+        traceback.print_exc
+        print("파일명에서 날짜를 찾을 수 없거나 유효한 파일이 없습니다.")
+        return None
+
+
+def get_daily_signal_recommendations_sub(best_file_path):
+    recent_path = get_latest_best_file(best_file_path)
+
+    df_recent = pd.read_csv(recent_path, dtype={symbol_var:'string'})
+    candidate_list = df_recent[symbol_var].unique().tolist()
+
+    today_reco_data =[]
+
+    for symbol in candidate_list:
+        df_symbol = df_recent[df_recent[symbol_var]==symbol].iloc[0]
+        name = df_symbol[name_var]
+        condition_target_return = df_symbol['condition_target_return']
+        condition_holding_days = df_symbol['condition_holding_days']
+        condition_buy_cci_threshold = df_symbol['condition_buy_cci_threshold']
+        condition_stop_loss_cci_threshold = df_symbol['condition_stop_loss_cci_threshold']
+        win_rate = df_symbol['win_rate']
+        count_win = df_symbol['count_win']
+        revenue_rate = df_symbol['revenue_rate']
+        avg_revenue_per_days_held = df_symbol['avg_revenue_per_days_held']
+        avg_days_held = df_symbol['avg_days_held']
+
+        df_price = fdr.DataReader(symbol)
+        buy_price = df_price.iloc[-1][is_open_uppercase]
+
+        df = update_cci_data(symbol, '0', '0', '')
+        yesterday_open_cci = df.iloc[-2][open_cci_index_var]
+        current_open_cci = df.iloc[-1][open_cci_index_var]
+        if yesterday_open_cci < condition_buy_cci_threshold and current_open_cci >= condition_buy_cci_threshold:
+            reco_dict = {
+                symbol_var : symbol,
+                name_var : name,
+                'buy_price' : buy_price,
+                'current_open_cci' : current_open_cci,
+                'condition_target_return' : condition_target_return,
+                'condition_holding_days' : condition_holding_days,
+                'condition_buy_cci_threshold' : condition_buy_cci_threshold,
+                'condition_stop_loss_cci_threshold' : condition_stop_loss_cci_threshold,
+                'win_rate' : win_rate,
+                'count_win' : count_win,
+                'revenue_rate' : revenue_rate,
+                'avg_revenue_per_days_held' : avg_revenue_per_days_held,
+                'avg_days_held' : avg_days_held,
+
+            }
+            today_reco_data.append(reco_dict)
+
+    if len(today_reco_data) == 0:
+        df_reco = pd.DataFrame()
+    else:
+        df_reco = pd.DataFrame(today_reco_data)
+        if symbol_var in df_reco.columns:
+            df_reco[symbol_var] = df_reco[symbol_var].astype('string')
+
+    return df_reco
+
+def get_daily_signal_recommendations():
+    try:
+        save_date_str = datetime.now().strftime('%Y%m%d')
+
+        # Ensure directories exist
+        os.makedirs(daily_reco_win_path, exist_ok=True)
+        os.makedirs(daily_reco_revenue_path, exist_ok=True)
+        os.makedirs(daily_reco_revenue_per_days_held_path, exist_ok=True)
+
+        df_win_reco = get_daily_signal_recommendations_sub(best_file_path=daily_best_win_csvs_path)
+        df_win_reco.to_csv(f"{daily_reco_win_path}/reco_win_{save_date_str}.csv", index=False, encoding='utf-8-sig')
+
+        df_revenue_reco = get_daily_signal_recommendations_sub(best_file_path=daily_best_return_csvs_path)
+        df_revenue_reco.to_csv(f"{daily_reco_revenue_path}/reco_revenue_{save_date_str}.csv", index=False, encoding='utf-8-sig')
+
+        df_revenue_per_days_held_reco = get_daily_signal_recommendations_sub(best_file_path=daily_best_return_per_days_held_csvs_path)
+        df_revenue_per_days_held_reco.to_csv(f"{daily_reco_revenue_per_days_held_path}/reco_revenue_per_days_held_{save_date_str}.csv", index=False, encoding='utf-8-sig')
+
+    except FileNotFoundError as fnfe:
+        print(f"FileNotFoundError: {fnfe}")
+        traceback.print_exc()
+    except pd.errors.EmptyDataError as ede:
+        print(f"EmptyDataError: {ede}")
+        traceback.print_exc()
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        traceback.print_exc()
+
+
+def run_daily_buy_trade(best_file_path):
+    recent_path = get_latest_best_file(best_file_path)
+
+    df_recent = pd.read_csv(recent_path, dtype={symbol_var:'string'})
+    candidate_list = df_recent[symbol_var].unique().tolist()

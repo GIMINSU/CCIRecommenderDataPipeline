@@ -1,25 +1,37 @@
+import os
 from flask import Flask
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime
-from daily_function import create_kr_symbol_list, process_all_stocks_with_save_optimized
+from daily_function import create_kr_symbol_list, process_all_stocks_with_save_optimized, get_daily_signal_recommendations
 from slack_message import send_simple_message
 from krxholidays import is_holiday
 import logging
 import traceback
 
-# Logging 설정
+
+# 로그 파일 경로 설정
+log_file_path = os.path.join(os.path.dirname(__file__), "app.log")
+
+# 기존 핸들러 제거 및 로그 설정
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
+
 logging.basicConfig(
-    level=logging.INFO,  # 기본 로그 레벨
+    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("app.log"),  # 파일에 로그 저장
+        logging.FileHandler(log_file_path),  # 파일에 로그 저장
         logging.StreamHandler()  # 콘솔에 로그 출력
     ]
 )
 
 # Flask 앱 생성
 app = Flask(__name__)
+
+# Flask 로거 설정
+app.logger.handlers = logging.getLogger().handlers
+app.logger.setLevel(logging.INFO)
 
 # Configurations
 CONFIG = {
@@ -82,8 +94,11 @@ def setup_scheduler():
     scheduler.start()
 
     # 한국 시장 스케줄
-    trigger_kr = CronTrigger(hour=15, minute=31)
-    scheduler.add_job(execute_pipeline, trigger=trigger_kr, id="kr_pipeline")
+    kr_best_data_trigger = CronTrigger(hour=23, minute=00)
+    scheduler.add_job(execute_pipeline, trigger=kr_best_data_trigger, id="kr_best_data")
+
+    kr_reco_data_trigger = CronTrigger(hour=9, minute=1)
+    scheduler.add_job(get_daily_signal_recommendations, trigger=kr_reco_data_trigger, id='kr_reco_data')
     
     logging.info("Scheduler has been set up with APScheduler.")
 

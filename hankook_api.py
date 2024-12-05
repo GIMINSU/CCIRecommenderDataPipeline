@@ -259,3 +259,56 @@ class KISAPIClient:
 
         response = self._request("/uapi/domestic-stock/v1/trading/order-cash", headers, body=body, method="POST")
         return response.get("output", {})
+
+    def get_stock_balance(self, CANO, ACNT_PRDT_CD, AFHR_FLPR_YN='N', OFL_YN='', INQR_DVSN='02', UNPR_DVSN='01',
+                      FUND_STTL_ICLD_YN='N', FNCG_AMT_AUTO_RDPT_YN='N', PRCS_DVSN='00', CTX_AREA_FK100='', CTX_AREA_NK100=''):
+        """
+        주식 잔고 조회 API
+        :param CANO: 계좌번호 앞 8자리
+        :param ACNT_PRDT_CD: 계좌상품코드 (뒤 2자리)
+        :param AFHR_FLPR_YN: 시간외단일가 여부 ('N': 기본값)
+        :param OFL_YN: 오프라인 여부 (기본값: 공란)
+        :param INQR_DVSN: 조회 구분 ('01': 대출일별, '02': 종목별, 기본값)
+        :param UNPR_DVSN: 단가 구분 ('01': 기본값)
+        :param FUND_STTL_ICLD_YN: 펀드결제분 포함 여부 ('N': 기본값)
+        :param FNCG_AMT_AUTO_RDPT_YN: 융자금액 자동 상환 여부 ('N': 기본값)
+        :param PRCS_DVSN: 처리 구분 ('00': 전일매매 포함, 기본값)
+        :param CTX_AREA_FK100: 연속 조회 검색 조건
+        :param CTX_AREA_NK100: 연속 조회 키
+        :return: 주식 잔고 데이터 (DataFrame)
+        """
+        tr_id = 'TTTC8434R'
+        access_token = self.issue_access_token()
+        headers = self._get_headers(access_token, tr_id)
+        params = {
+            "CANO": CANO,
+            "ACNT_PRDT_CD": ACNT_PRDT_CD,
+            "AFHR_FLPR_YN": AFHR_FLPR_YN,
+            "OFL_YN": OFL_YN,
+            "INQR_DVSN": INQR_DVSN,
+            "UNPR_DVSN": UNPR_DVSN,
+            "FUND_STTL_ICLD_YN": FUND_STTL_ICLD_YN,
+            "FNCG_AMT_AUTO_RDPT_YN": FNCG_AMT_AUTO_RDPT_YN,
+            "PRCS_DVSN": PRCS_DVSN,
+            "CTX_AREA_FK100": CTX_AREA_FK100,
+            "CTX_AREA_NK100": CTX_AREA_NK100
+        }
+
+        # API 요청
+        response = self._request("/uapi/domestic-stock/v1/trading/inquire-balance", headers, params=params)
+
+        # 주식 잔고 데이터 반환
+        output1 = response.get("output1", [])
+        output2 = response.get("output2", [])
+        
+        df1 = pd.DataFrame(output1)
+        df2 = pd.DataFrame(output2)
+
+        # 추가 정보 출력
+        balance_summary = {
+            "예수금총금액": df2.iloc[0]["dnca_tot_amt"],
+            "총평가금액": df2.iloc[0]["tot_evlu_amt"],
+            "가수도정산금액": df2.iloc[0]['prvs_rcdl_excc_amt']
+        }
+
+        return df1, df2, balance_summary
