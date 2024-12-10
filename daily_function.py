@@ -1420,7 +1420,8 @@ def run_buy_order():
             # investment_targets = ['win_rate', 'revenue_rate', 'revenue_per_days_held']
             investment_targets = ['win_rate']
             for investment_target in investment_targets:
-                df_updated = create_buy_order_data(investment_target=investment_target, user_info=user_info)
+                df_updated = create_buy_order_data(investment_target=investment_target, user_info=user_info1)
+                df_updated = create_buy_order_data(investment_target=investment_target, user_info=user_info2)
         except Exception as e:
             traceback.print_exc()
             pass
