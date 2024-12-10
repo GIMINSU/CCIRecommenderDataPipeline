@@ -237,6 +237,23 @@ class KISAPIClient:
         :param PDNO: 종목코드 (6자리)
         :param CANO: 계좌번호 앞 8자리
         :param ORD_DVSN: 주문 구분 (예: "01" - 시장가)
+                                    00 : 지정가
+                                    01 : 시장가
+                                    02 : 조건부지정가
+                                    03 : 최유리지정가
+                                    04 : 최우선지정가
+                                    05 : 장전 시간외 (08:20~08:40)
+                                    06 : 장후 시간외 (15:30~16:00)
+                                    07 : 시간외 단일가(16:00~18:00)
+                                    08 : 자기주식
+                                    09 : 자기주식S-Option
+                                    10 : 자기주식금전신탁
+                                    11 : IOC지정가 (즉시체결,잔량취소)
+                                    12 : FOK지정가 (즉시체결,전량취소)
+                                    13 : IOC시장가 (즉시체결,잔량취소)
+                                    14 : FOK시장가 (즉시체결,전량취소)
+                                    15 : IOC최유리 (즉시체결,잔량취소)
+                                    16 : FOK최유리 (즉시체결,전량취소)
         :param ORD_QTY: 주문 수량
         :param ORD_UNPR: 주문 가격
         :param order_type: 주문 유형 ("buy" 또는 "sell")
@@ -306,9 +323,70 @@ class KISAPIClient:
 
         # 추가 정보 출력
         balance_summary = {
-            "예수금총금액": df2.iloc[0]["dnca_tot_amt"],
-            "총평가금액": df2.iloc[0]["tot_evlu_amt"],
-            "가수도정산금액": df2.iloc[0]['prvs_rcdl_excc_amt']
+            "dnca_tot_amt": df2.iloc[0]["dnca_tot_amt"],
+            "tot_evlu_amt": df2.iloc[0]["tot_evlu_amt"],
+            "prvs_rcdl_excc_amt": df2.iloc[0]['prvs_rcdl_excc_amt']
         }
 
         return df1, df2, balance_summary
+
+    def get_daily_order_execution(self, CANO, INQR_STRT_DT, INQR_END_DT):
+        """
+        주식 일별 주문체결 조회
+        :param CANO: 종합계좌번호 (8자리)
+        :param INQR_STRT_DT: 조회 시작일 (YYYYMMDD)
+        :param INQR_END_DT: 조회 종료일 (YYYYMMDD)
+        :param tr_id: 거래 ID (TTTC8001R: 3개월 이내, CTSC9115R: 3개월 이상)
+        :param tr_cont: 연속 조회 여부 (공란: 초기 조회, N: 다음 데이터 조회)
+        :return: DataFrame 형태의 주문 체결 데이터
+        """
+        
+        tr_id='TTTC8001R'
+        tr_cont=''
+
+        try:
+            # 액세스 토큰 발급 및 헤더 설정
+            access_token = self.issue_access_token()
+            headers = self._get_headers(access_token, tr_id)
+
+            # Query Parameters
+            params = {
+                "CANO": CANO,
+                "ACNT_PRDT_CD": "01", #  계좌상품코드 (2자리) 
+                "INQR_STRT_DT": INQR_STRT_DT,
+                "INQR_END_DT": INQR_END_DT,
+                "SLL_BUY_DVSN_CD": "00",  # 매도/매수 전체
+                "INQR_DVSN": "00",  # 역순 조회
+                "PDNO": "",  # 전체 종목
+                "CCLD_DVSN": "00",  # 체결/미체결 전체
+                "ORD_GNO_BRNO": "",
+                "ODNO": "",
+                "INQR_DVSN_3": "00",  # 전체
+                "INQR_DVSN_1": "",
+                "CTX_AREA_FK100": tr_cont,
+                "CTX_AREA_NK100": tr_cont
+            }
+
+            # API 요청
+            endpoint = "/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
+            response = self._request(endpoint, headers, params=params)
+
+            # 데이터 파싱
+            output1 = response.get("output1", [])
+            output2 = response.get("output2", {})
+
+            # 데이터프레임 변환
+            df_output1 = pd.DataFrame(output1)
+            balance_summary = {
+                "tot_ord_qty": output2.get("tot_ord_qty", 0),
+                "tot_ccld_qty": output2.get("tot_ccld_qty", 0),
+                "tot_ccld_amt": output2.get("tot_ccld_amt", 0),
+                "pchs_avg_pric": output2.get("pchs_avg_pric", 0),
+                "prsm_tlex_smtl": output2.get("prsm_tlex_smtl", 0)
+            }
+
+            return df_output1, balance_summary
+
+        except Exception as e:
+            print(f"Error occurred while fetching daily order execution data: {e}")
+            return pd.DataFrame(), {}

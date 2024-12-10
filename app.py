@@ -3,7 +3,7 @@ from flask import Flask
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime
-from daily_function import create_kr_symbol_list, process_all_stocks_with_save_optimized, get_daily_signal_recommendations
+from daily_function import create_kr_symbol_list, process_all_stocks_with_save_optimized, get_daily_signal_recommendations, run_buy_order, run_sell_order, update_order_execution
 from slack_message import send_simple_message
 from krxholidays import is_holiday
 import logging
@@ -97,8 +97,17 @@ def setup_scheduler():
     kr_best_data_trigger = CronTrigger(hour=23, minute=00)
     scheduler.add_job(execute_pipeline, trigger=kr_best_data_trigger, id="kr_best_data")
 
-    kr_reco_data_trigger = CronTrigger(hour=9, minute=1)
+    kr_reco_data_trigger = CronTrigger(hour=9, minute=00, second=2)
+    scheduler.add_job(run_buy_order, trigger=kr_reco_data_trigger, id='kr_buy_order')
     scheduler.add_job(get_daily_signal_recommendations, trigger=kr_reco_data_trigger, id='kr_reco_data')
+
+    kr_sell_trigger = CronTrigger(hour=15, minute=26)
+    scheduler.add_job(run_sell_order, trigger=kr_sell_trigger, id='kr_sell_order')
+
+    kr_update_trigger = CronTrigger(hour=15, minute=31)
+    scheduler.add_job(update_order_execution, trigger=kr_update_trigger, id='kr_execution_update')
+
+    
     
     logging.info("Scheduler has been set up with APScheduler.")
 
