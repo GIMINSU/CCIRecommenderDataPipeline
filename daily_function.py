@@ -1482,7 +1482,11 @@ def create_sell_order_data(user_info):
 
     cano = user_info['CANO']
     save_path = f'{daily_order_path}/real_order_history_account_{cano}.csv'
-    df_real_history = pd.read_csv(save_path, dtype={symbol_var:'string', 'sell_order_number':'string'})
+
+    if os.path.exists(save_path):
+        df_real_history = pd.read_csv(save_path, dtype={symbol_var:'string', 'sell_order_number':'string'})
+    else:
+        df_real_history = pd.DataFrame()
 
     date_colmuns = ['buy_order_date', 'real_buy_date', 'sell_order_date', 'real_sell_date', 'maturity_date']
 
@@ -1522,46 +1526,47 @@ def create_sell_order_data(user_info):
         df_cci = create_new_cci_data(df_price)
 
         sell_order_date = None
-        sell_order_number = None
+        sell_order_number = ''
         real_sell_signal = None
-        sell_order_price = None
-        sell_order_qty = None
+        sell_order_price = ''
+        sell_order_qty = real_buy_qty
+
+        ORD_DVSN = '01' # 시장가
+        if ORD_DVSN == '01':
+            sell_order_price = '0'
+        # elif ORD_DVSN == '02': # 조건부 지정가
+            # sell_order_price = str(int(round(float(df_price.iloc[-1][open_pr_var] - (df_price.iloc[-1][open_pr_var] * 0.2)), 0)))
+        
 
         try:
             if today_date >= maturity_date:
-                result = client.place_order(PDNO=symbol, CANO=cano, ODR_DVSN='01', ORD_QTY=real_buy_qty, DRD_UNPR='0', order_type='sell')
+                result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
                 sell_order_number = str(int(result['odno']))
                 real_sell_signal = 'maturity'
                 sell_order_date = datetime.now().strftime('%Y-%m-%d')
-                sell_order_price = '0'
-                sell_order_qty = real_buy_qty
             else:
                 if df_price[close_pr_var].iloc[-1] > target_price:
-                    result = client.place_order(PDNO=symbol, CANO=cano, ODR_DVSN='01', ORD_QTY=real_buy_qty, DRD_UNPR='0', order_type='sell')
+                    result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
                     sell_order_number = str(int(result['odno']))
                     real_sell_signal = 'reach_target'
                     sell_order_date = datetime.now().strftime('%Y-%m-%d')
-                    sell_order_price = '0'
-                    sell_order_qty = real_buy_qty
                 elif df_cci[close_cci_index_var].iloc[-1] <= stop_loss_cci_threshold:
-                    result = client.place_order(PDNO=symbol, CANO=cano, ODR_DVSN='01', ORD_QTY=real_buy_qty, DRD_UNPR='0', order_type='sell')
+                    result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
                     sell_order_number = str(int(result['odno']))
                     real_sell_signal = 'stop_loss'
                     sell_order_date = datetime.now().strftime('%Y-%m-%d')
-                    sell_order_price = '0'
-                    sell_order_qty = real_buy_qty
 
                 df_real_history.loc[i, 'sell_order_date'] = sell_order_date
                 df_real_history.loc[i, 'sell_order_number'] = sell_order_number
-                df_real_history.loc[i, 'sell_order_price'] = sell_order_price
-                df_real_history.loc[i, 'sell_order_qty'] = sell_order_qty
+                df_real_history.loc[i, 'sell_order_price'] = float(sell_order_price)
+                df_real_history.loc[i, 'sell_order_qty'] = float(sell_order_qty)
                 df_real_history.loc[i, 'real_sell_signal'] = real_sell_signal
-
+            
         except Exception as e:
             traceback.print_exc()
             pass
 
-    df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig')
+    # df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig')
 
     return df_real_history
 

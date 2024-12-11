@@ -94,14 +94,14 @@ def setup_scheduler():
     scheduler.start()
 
     # 한국 시장 스케줄
-    kr_best_data_trigger = CronTrigger(hour=23, minute=00)
+    kr_best_data_trigger = CronTrigger(hour=23, minute=0)
     scheduler.add_job(execute_pipeline, trigger=kr_best_data_trigger, id="kr_best_data")
 
     kr_reco_data_trigger = CronTrigger(hour=9, minute=00, second=2)
     scheduler.add_job(run_buy_order, trigger=kr_reco_data_trigger, id='kr_buy_order')
     scheduler.add_job(get_daily_signal_recommendations, trigger=kr_reco_data_trigger, id='kr_reco_data')
 
-    kr_sell_trigger = CronTrigger(hour=15, minute=26)
+    kr_sell_trigger = CronTrigger(hour=15, minute=21)
     scheduler.add_job(run_sell_order, trigger=kr_sell_trigger, id='kr_sell_order')
 
     kr_update_trigger = CronTrigger(hour=15, minute=31)
