@@ -37,7 +37,8 @@ app.logger.setLevel(logging.INFO)
 CONFIG = {
     "read_dummy": "1",
     "save_dummy": "1",
-    "end_date_str": datetime.now().strftime('%Y%m%d'),
+    # "end_date_str": datetime.now().strftime('%Y%m%d'),
+    "end_date_str": '20241212',
     "holding_days": [10, 20, 30, 40, 50, 60],
     "target_return_values": range(1, 11),
     "buy_cci_thresholds": [300, 250, 200, 150, 100, 50, 0, -50, -100, -150, -200, -250, -300],
@@ -94,7 +95,7 @@ def setup_scheduler():
     scheduler.start()
 
     # 한국 시장 스케줄
-    kr_best_data_trigger = CronTrigger(hour=23, minute=1)
+    kr_best_data_trigger = CronTrigger(hour=10, minute=0)
     scheduler.add_job(execute_pipeline, trigger=kr_best_data_trigger, id="kr_best_data")
 
     kr_reco_data_trigger = CronTrigger(hour=9, minute=0, second=2)

@@ -559,6 +559,7 @@ def update_cci_data(symbol, read_dummy, save_dummy, end_date_str):
     df_new_cci = pd.DataFrame()
 
     df_price = update_daily_stock_price(symbol=symbol, read_dummy=read_dummy, save_dummy=save_dummy, end_date_str=end_date_str)
+
     if df_price.empty:
         print(f"Error: No price data available for symbol {symbol}. Skipping CCI calculation.")
         return pd.DataFrame()
@@ -658,11 +659,17 @@ def create_trade_history_by_symbol(
 
         df = df.drop_duplicates(subset=[date_var]).reset_index(drop=True)
         last_price_date = df[date_var].max()
+        df[open_cci_index_var] = df[open_cci_index_var].astype(float)
+        df[close_cci_index_var] = df[close_cci_index_var].astype(float)
+        df[open_pr_var] = df[open_pr_var].astype(float)
+        df[close_pr_var] = df[close_pr_var].astype(float)
 
         for x in holding_days:
             for target_return_percent in target_return_values:
                 for buy_cci_threshold in buy_cci_thresholds:
                     for stop_loss_cci_threshold in stop_loss_cci_thresholds:
+                        buy_cci_threshold = float(buy_cci_threshold)
+                        stop_loss_cci_threshold = float(stop_loss_cci_threshold)
                         # 매수 조건을 벡터화
                         buy_signals = (df[open_cci_index_var].shift(1) < buy_cci_threshold) & \
                                       (df[open_cci_index_var] > buy_cci_threshold)
@@ -1042,6 +1049,7 @@ def process_all_stocks_with_save_optimized(
                         done_count += 1
                         print(f"Processed and passed symbol: {symbol}, {done_count}/{len(all_symbols)}")
                     else:
+                        traceback.print_exc()
                         print(f"No trades found for symbol {symbol}. Skipping.")
                 except Exception as e:
                     traceback.print_exc()
