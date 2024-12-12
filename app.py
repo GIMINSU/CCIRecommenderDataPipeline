@@ -37,8 +37,7 @@ app.logger.setLevel(logging.INFO)
 CONFIG = {
     "read_dummy": "1",
     "save_dummy": "1",
-    # "end_date_str": datetime.now().strftime('%Y%m%d'),
-    "end_date_str": '20241212',
+    "end_date_str": datetime.now().strftime('%Y%m%d'),
     "holding_days": [10, 20, 30, 40, 50, 60],
     "target_return_values": range(1, 11),
     "buy_cci_thresholds": [300, 250, 200, 150, 100, 50, 0, -50, -100, -150, -200, -250, -300],
