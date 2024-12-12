@@ -107,7 +107,7 @@ def is_market_open():
 
 # 데이터프레임을 CSV 파일로 저장 또는 업데이트
 def update_price_dataframe(symbol, save_path, end_date_str):
-    df_csv = pd.read_csv(save_path, parse_dates=[date_var])
+    df_csv = pd.read_csv(save_path, dtype=str)
     df_csv[date_var] = pd.to_datetime(df_csv[date_var], errors='coerce', format='ISO8601')
 
     last_date = df_csv[date_var].max()
@@ -215,6 +215,7 @@ def create_kr_symbol_list(read_dummy : str, save_dummy : str, end_date_str=''):
         kr_stock_df[name_var] = kr_stock_df[is_name_uppercase]
         kr_stock_df[symbol_var] = kr_stock_df[is_code_uppercase] # fdr.StockListing('KRX')  return Code
         kr_stock_df[total_stock_var] = kr_stock_df[is_total_stock_uppercase].astype(float).astype('int64')
+        kr_stock_df['marcap'] = kr_stock_df['Marcap']
 
         krx_administrative_df = fdr.StockListing('KRX-ADMINISTRATIVE')
         krx_administrative_df[symbol_var] = krx_administrative_df[is_symbol_uppercase]
@@ -225,6 +226,9 @@ def create_kr_symbol_list(read_dummy : str, save_dummy : str, end_date_str=''):
         kr_etf_df[type_var] = 'etf'
         kr_etf_df[name_var] = kr_etf_df[is_name_uppercase]
         kr_etf_df[symbol_var] = kr_etf_df[is_symbol_uppercase]
+        kr_etf_df['Price'] = kr_etf_df['Price'].astype('int64')
+        kr_etf_df[total_stock_var] = None
+        kr_etf_df['marcap'] = None
         
         kr_etf_df[total_stock_var] = 0
 
@@ -233,7 +237,9 @@ def create_kr_symbol_list(read_dummy : str, save_dummy : str, end_date_str=''):
             try:
                 t_df = client.search_stock_info(PDNO=str(etf_symbol))
                 t_total_stock = int(float(t_df[lstg_stqt_var].iloc[0]))
+                t_market_cap = t_total_stock * kr_etf_df['Price']
                 kr_etf_df[total_stock_var] = np.where(kr_etf_df[symbol_var] == etf_symbol, t_total_stock, kr_etf_df[total_stock_var])
+                kr_etf_df['marcap'] = np.where(kr_etf_df[symbol_var] == etf_symbol, t_market_cap, kr_etf_df['marcap'])
             except:
                 pass
 
@@ -242,12 +248,12 @@ def create_kr_symbol_list(read_dummy : str, save_dummy : str, end_date_str=''):
         krx_symbol_list_df[total_stock_var] = krx_symbol_list_df[total_stock_var].astype(float).astype('int64')
         krx_symbol_list_df = krx_symbol_list_df[krx_symbol_list_df[total_stock_var]>0].reset_index(drop=True)
 
-        new_df = krx_symbol_list_df[[type_var, symbol_var, name_var, total_stock_var]].reset_index(drop=True)
+        new_df = krx_symbol_list_df[[type_var, symbol_var, name_var, total_stock_var, 'marcap']].reset_index(drop=True)
 
         if save_dummy == '1':
             os.makedirs(file_path, exist_ok=True)
             if not new_df.empty:
-                new_df.to_csv(save_path, index=False, encoding='utf-8-sig')
+                new_df.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
             else:
                 print(f"Warning: Attempted to save an empty DataFrame to {save_path}.")
 
@@ -256,7 +262,7 @@ def create_kr_symbol_list(read_dummy : str, save_dummy : str, end_date_str=''):
 
     if read_dummy == '1':
         if os.path.exists(save_path):
-            return_df = pd.read_csv(save_path, dtype={symbol_var:str})
+            return_df = pd.read_csv(save_path, dtype=str)
         else:
             return_df = create_new_kr_stock_symbol_list(save_path=save_path, save_dummy=save_dummy)
     else:
@@ -276,7 +282,7 @@ def load_min_date_from_csv():
     min_date_file = os.path.join(file_path, file_name)
     if os.path.exists(min_date_file):
         try:
-            df = pd.read_csv(min_date_file, index_col=symbol_var)
+            df = pd.read_csv(min_date_file, index_col=symbol_var, dtype=str)
             if not df.empty:
                 df['min_date'] = pd.to_datetime(df['min_date'], errors='coerce', format='ISO8601')
             return df
@@ -296,7 +302,7 @@ def save_min_date(symbol: str, min_date):
 
     df_min_dates.loc[symbol] = pd.to_datetime(min_date, errors='coerce', format='ISO8601')
 
-    df_min_dates.to_csv(min_date_file)
+    df_min_dates.to_csv(min_date_file, encoding='utf-8-sig', quoting=1)
 
 def get_min_date(symbol: str):
     df_min_dates = load_min_date_from_csv()
@@ -394,7 +400,7 @@ def update_daily_stock_price(symbol, read_dummy, save_dummy, end_date_str='', st
     if read_dummy == '1':
         # Check if the file exists
         if os.path.exists(save_path):
-            df_csv = pd.read_csv(save_path)
+            df_csv = pd.read_csv(save_path, dtype=str)
             if not df_csv.empty:
                 df_csv[date_var] = pd.to_datetime(df_csv[date_var], errors='coerce', format='ISO8601')
                 csv_min_date = df_csv[date_var].min()
@@ -417,7 +423,7 @@ def update_daily_stock_price(symbol, read_dummy, save_dummy, end_date_str='', st
 
                     if save_dummy == '1':
                         if not df_new_price.empty:
-                            df_new_price.to_csv(save_path, index=False, encoding='utf-8-sig')  # 업데이트된 데이터 저장
+                            df_new_price.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
                             return df_new_price
                 else:
                     return pd.DataFrame()
@@ -476,7 +482,7 @@ def update_daily_stock_price(symbol, read_dummy, save_dummy, end_date_str='', st
             
             if save_dummy == '1':
                 if not df_updated.empty:
-                    df_updated.to_csv(save_path, index=False, encoding='utf-8-sig')  # 업데이트된 데이터 저장
+                    df_updated.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
                 else:
                     print(f"Warning: Attempted to save an empty DataFrame to {save_path}.")
 
@@ -507,7 +513,7 @@ def update_daily_stock_price(symbol, read_dummy, save_dummy, end_date_str='', st
             
             if save_dummy == '1':
                 if not df_new_price.empty:
-                    df_new_price.to_csv(save_path, index=False, encoding='utf-8-sig')
+                    df_new_price.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
                 else:
                     print(f"Warning: Attempted to save an empty DataFrame to {save_path}.")
             func_end_datetime = datetime.now()
@@ -564,7 +570,7 @@ def update_cci_data(symbol, read_dummy, save_dummy, end_date_str):
             if os.path.exists(save_path):
                 if os.path.getsize(save_path) > 0:
                     try:
-                        df_cci = pd.read_csv(save_path)
+                        df_cci = pd.read_csv(save_path, dtype=str)
                         if len(df_cci) > 0:
                             df_cci[date_var] = pd.to_datetime(df_cci[date_var], errors='coerce')
                         else:
@@ -591,7 +597,7 @@ def update_cci_data(symbol, read_dummy, save_dummy, end_date_str):
                 df_new_cci = create_new_cci_data(df_price)
                 df_combined = pd.concat([df_cci, df_new_cci]).drop_duplicates(subset=[date_var], keep='last')
                 if save_dummy == '1':
-                    df_combined.to_csv(save_path, index=False, encoding='utf-8-sig')
+                    df_combined.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
                 return df_combined
             else:
                 # print(f"No new CCI data to update for symbol {symbol}.")
@@ -599,7 +605,7 @@ def update_cci_data(symbol, read_dummy, save_dummy, end_date_str):
         else:
             df_new_cci = create_new_cci_data(df_price)
             if save_dummy == '1':
-                df_new_cci.to_csv(save_path, index=False, encoding='utf-8-sig')
+                df_new_cci.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
             return df_new_cci
 
 
@@ -765,7 +771,7 @@ def create_trade_history_by_symbol(
             os.remove(file_path)
 
     # 새로운 결과 저장
-    df_all_trades.to_csv(trades_save_path, index=False, encoding='utf-8-sig')
+    df_all_trades.to_csv(trades_save_path, index=False, encoding='utf-8-sig', quoting=1)
 
     return df_all_trades, stock_name, stock_type, last_price_date
 
@@ -851,8 +857,8 @@ def process_all_stocks_with_save_optimized(
 
     try:
 
-        stock_symbols = df_kr[df_kr[type_var]=='stock'].loc[:199][symbol_var].tolist()
-        etf_symbols = df_kr[df_kr[type_var]=='etf'].reset_index(drop=True).loc[:199][symbol_var].tolist()
+        stock_symbols = df_kr[df_kr[type_var]=='stock'].loc[:299][symbol_var].tolist() ## Note : 전체 주식 중 300개에 대해서만 거래 시뮬레이션 구동
+        etf_symbols = df_kr[df_kr[type_var]=='etf'].reset_index(drop=True).loc[:299][symbol_var].tolist() ## Note : 전체 ETF 중 300개에 대해서만 거래 시뮬레이션 구동
 
         all_symbols = stock_symbols + etf_symbols
         processed_symbols = []
@@ -881,17 +887,17 @@ def process_all_stocks_with_save_optimized(
 
         # 기존 데이터 로드
         if os.path.exists(win_save_path):
-            final_best_win_df = pd.read_csv(win_save_path, dtype={symbol_var:str})
+            final_best_win_df = pd.read_csv(win_save_path, dtype=str)
         else:
             final_best_win_df = pd.DataFrame()
 
         if os.path.exists(return_save_path):
-            final_best_return_df = pd.read_csv(return_save_path, dtype={symbol_var:str})
+            final_best_return_df = pd.read_csv(return_save_path, dtype=str)
         else:
             final_best_return_df = pd.DataFrame()
 
         if os.path.exists(return_per_days_held_save_path):
-            final_best_return_per_days_held_df = pd.read_csv(return_per_days_held_save_path, dtype={symbol_var:str})
+            final_best_return_per_days_held_df = pd.read_csv(return_per_days_held_save_path, dtype=str)
         else:
             final_best_return_per_days_held_df = pd.DataFrame()
 
@@ -925,7 +931,7 @@ def process_all_stocks_with_save_optimized(
 
                             # 진행 상태 업데이트만 수행
                             processed_symbols.append(symbol)
-                            pd.DataFrame({symbol_var: processed_symbols}, dtype=str).to_csv(progress_file_path, index=False, encoding='utf-8-sig')
+                            pd.DataFrame({symbol_var: processed_symbols}, dtype=str).to_csv(progress_file_path, index=False, encoding='utf-8-sig', quoting=1)
                             done_count += 1
                             print(f"Processed and passed symbol: {symbol}, {done_count}/{len(all_symbols)}")
                             continue  # 다음 심볼로 넘어감
@@ -1020,9 +1026,9 @@ def process_all_stocks_with_save_optimized(
                                     )
                                     
                                 # 최적 조건 결과 저장
-                                final_best_win_df.to_csv(win_save_path, index=False, encoding='utf-8-sig')
-                                final_best_return_df.to_csv(return_save_path, index=False, encoding='utf-8-sig')
-                                final_best_return_per_days_held_df.to_csv(return_per_days_held_save_path, index=False, encoding='utf-8-sig')
+                                final_best_win_df.to_csv(win_save_path, index=False, encoding='utf-8-sig', quoting=1)
+                                final_best_return_df.to_csv(return_save_path, index=False, encoding='utf-8-sig', quoting=1)
+                                final_best_return_per_days_held_df.to_csv(return_per_days_held_save_path, index=False, encoding='utf-8-sig', quoting=1)
                         
                         except Exception as e:
                             print(f"Error processing symbol {symbol}: {e}")
@@ -1031,7 +1037,7 @@ def process_all_stocks_with_save_optimized(
 
                         # 진행 상태 업데이트
                         processed_symbols.append(symbol)
-                        pd.DataFrame({symbol_var: processed_symbols}, dtype=str).to_csv(progress_file_path, index=False)
+                        pd.DataFrame({symbol_var: processed_symbols}, dtype=str).to_csv(progress_file_path, index=False, encoding='utf-8-sig', quoting=1)
 
                         done_count += 1
                         print(f"Processed and passed symbol: {symbol}, {done_count}/{len(all_symbols)}")
@@ -1098,7 +1104,7 @@ def get_latest_best_file(directory, date_format="%Y%m%d"):
 def get_daily_signal_recommendations_sub(best_file_path):
     recent_path = get_latest_best_file(best_file_path)
 
-    df_recent = pd.read_csv(recent_path, dtype={symbol_var:'string'})
+    df_recent = pd.read_csv(recent_path, dtype=str)
     candidate_list = df_recent[symbol_var].unique().tolist()
 
     today_reco_data =[]
@@ -1160,13 +1166,13 @@ def get_daily_signal_recommendations():
         os.makedirs(daily_reco_revenue_per_days_held_path, exist_ok=True)
 
         df_win_reco = get_daily_signal_recommendations_sub(best_file_path=daily_best_win_csvs_path)
-        df_win_reco.to_csv(f"{daily_reco_win_path}/reco_win_{save_date_str}.csv", index=False, encoding='utf-8-sig')
+        df_win_reco.to_csv(f"{daily_reco_win_path}/reco_win_{save_date_str}.csv", index=False, encoding='utf-8-sig', quoting=1)
 
         df_revenue_reco = get_daily_signal_recommendations_sub(best_file_path=daily_best_return_csvs_path)
-        df_revenue_reco.to_csv(f"{daily_reco_revenue_path}/reco_revenue_{save_date_str}.csv", index=False, encoding='utf-8-sig')
+        df_revenue_reco.to_csv(f"{daily_reco_revenue_path}/reco_revenue_{save_date_str}.csv", index=False, encoding='utf-8-sig', quoting=1)
 
         df_revenue_per_days_held_reco = get_daily_signal_recommendations_sub(best_file_path=daily_best_return_per_days_held_csvs_path)
-        df_revenue_per_days_held_reco.to_csv(f"{daily_reco_revenue_per_days_held_path}/reco_revenue_per_days_held_{save_date_str}.csv", index=False, encoding='utf-8-sig')
+        df_revenue_per_days_held_reco.to_csv(f"{daily_reco_revenue_per_days_held_path}/reco_revenue_per_days_held_{save_date_str}.csv", index=False, encoding='utf-8-sig', quoting=1)
 
     except FileNotFoundError as fnfe:
         print(f"FileNotFoundError: {fnfe}")
@@ -1204,7 +1210,12 @@ def get_candidate_list(investment_target, csv_paths):
     recent_file_path = get_latest_best_file(best_file_path)
 
     # CSV 파일 읽기
-    df_recent = pd.read_csv(recent_file_path, dtype={symbol_var: 'string'})
+    df_recent = pd.read_csv(recent_file_path, dtype=str)
+
+    float_columns = [criteria_var1, criteria_var2, criteria_var3]
+
+    for col in float_columns:
+        df_recent[col] = df_recent[col].astype(float)
 
     # Threshold 설정
     target_to_threshold = {
@@ -1246,169 +1257,178 @@ def create_buy_order_data(investment_target, user_info):
 
     os.makedirs(f'{daily_order_path}', exist_ok=True)
     order_history_csv_path = f'{daily_order_path}/real_order_history_account_{cano}.csv'
+    try:
+        if os.path.exists(order_history_csv_path):
+            df_real_history = pd.read_csv(order_history_csv_path, dtype=str)
+            if not df_real_history.empty:
+                df_real_history = pd.read_csv(order_history_csv_path, dtype=str)
+                existed_last_order_index = len(df_real_history)
+                order_index = existed_last_order_index+1
+        else:
+            pass
 
-    if os.path.exists(order_history_csv_path):
-        df_real_history = pd.read_csv(order_history_csv_path, dtype={symbol_var:'string', 'sell_order_number':'string'})
-        existed_last_order_index = len(df_real_history)
-        order_index = existed_last_order_index+1
-    else:
-        pass
+        order_data = []
 
-    order_data = []
+        order_date = datetime.now().date()
+        
+        for symbol in candidate_list:
+            add_index = int(candidate_list.index(symbol)) + 1
+            try:
+                # 최근 데이터 가져오기
+                df_symbol = df_recent[df_recent[symbol_var] == symbol].iloc[0]
+                symbol_name = df_symbol[name_var]
+                symbol_type = df_symbol[type_var]
+                
+                # 조건 및 데이터 초기화
+                condition_params = {
+                    "target_return": float(df_symbol['condition_target_return']),
+                    "holding_days": int(df_symbol['condition_holding_days']),
+                    "buy_cci_threshold": int(df_symbol['condition_buy_cci_threshold']),
+                    "stop_loss_cci_threshold": int(df_symbol['condition_stop_loss_cci_threshold'])
+                }
+                
+                performance_metrics = {
+                    "win_rate": float(df_symbol['win_rate']),
+                    "count_win": int(df_symbol['count_win']),
+                    "revenue_rate": float(df_symbol['revenue_rate']),
+                    "avg_revenue_per_days_held": int(df_symbol['avg_revenue_per_days_held']),
+                    "avg_days_held": int(df_symbol['avg_days_held']),
+                    "total_revenue": int(df_symbol['total_revenue'])
+                }
 
-    order_date = datetime.now().date()
-    
-    for symbol in candidate_list:
-        add_index = int(candidate_list.index(symbol)) + 1
-        try:
-            # 최근 데이터 가져오기
-            df_symbol = df_recent[df_recent[symbol_var] == symbol].iloc[0]
-            symbol_name = df_symbol[name_var]
-            symbol_type = df_symbol[type_var]
-            
-            # 조건 및 데이터 초기화
-            condition_params = {
-                "target_return": df_symbol['condition_target_return'],
-                "holding_days": int(df_symbol['condition_holding_days']),
-                "buy_cci_threshold": int(df_symbol['condition_buy_cci_threshold']),
-                "stop_loss_cci_threshold": int(df_symbol['condition_stop_loss_cci_threshold'])
-            }
-            
-            performance_metrics = {
-                "win_rate": df_symbol['win_rate'],
-                "revenue_rate": df_symbol['revenue_rate'],
-                "avg_revenue_per_days_held": int(df_symbol['avg_revenue_per_days_held']),
-                "avg_days_held": int(df_symbol['avg_days_held']),
-                "total_revenue": int(df_symbol['total_revenue'])
-            }
-
-            # 가격 데이터 불러오기
-            df_price = fdr.DataReader(symbol=symbol).reset_index()
-            df_price = df_price.rename(columns={
-                is_date_uppercase: date_var,
-                is_open_uppercase: open_pr_var,
-                is_close_uppercase: close_pr_var,
-                is_high_uppercase: high_pr_var,
-                is_low_uppercase: low_pr_var,
-                is_volume_uppercase: daily_trade_stock_var
-            })
-
-            # CCI 데이터 생성
-            df_cci = create_new_cci_data(df_price=df_price)
-            df_current = df_cci.iloc[-1]
-
-            # 매수 조건 확인
-            if (
-                df_cci.iloc[-2][open_cci_index_var] < condition_params["buy_cci_threshold"]
-                and df_cci.iloc[-1][open_cci_index_var] >= condition_params["buy_cci_threshold"]
-            ):
-
-                buy_order_price = df_current[close_pr_var]
-                buy_order_qty = None  
-                buy_order_number = None
-
-                # 잔고 확인 및 주문 실행
-                try:
-                    df1, df2, balance_summary = client.get_stock_balance(CANO=cano, ACNT_PRDT_CD='01')
-                    budget = balance_summary['prvs_rcdl_excc_amt']
-                    target_budget = int(float(budget * 0.1))
-                    buy_order_qty = int(round(float(target_budget) / float(buy_order_price), 0))
-
-                    if buy_order_qty >= 1:
-                        order_result = client.place_order(
-                        PDNO=symbol,
-                        CANO=cano,
-                        ORD_DVSN='00',
-                        ORD_QTY=f'{buy_order_qty}',
-                        ORD_UNPR=f'{buy_order_price}',
-                        order_type='buy'
-                    )
-                        buy_order_number = str(order_result['ODNO'])
-                        # 실제 예산 기반 주문 수량 계산 로직 추가 가능
-                        time.sleep(0.05)  # 요청 제한 조절
-                except Exception as e:
-                    traceback.print_exc()
-                    pass
-
-                order_data.append({
-                    'order_index': order_index+add_index,
-                    'buy_order_date': order_date.strftime('%Y-%m-%d'),
-                    symbol_var: symbol,
-                    name_var: symbol_name,
-                    **condition_params,
-                    **performance_metrics,
-                    'buy_order_number': buy_order_number,
-                    'buy_order_price': buy_order_price,
-                    'buy_order_qty': buy_order_qty,
-                    'real_buy_date': None,
-                    'real_buy_price': None,
-                    'real_buy_qty': None,
-                    'sell_order_date': None,
-                    'sell_order_number': None,
-                    'sell_order_price': None,
-                    'sell_order_qty' : None,
-                    'maturity_date': None,
-                    'real_sell_signal':None,
-                    'real_sell_date': None,
-                    'real_sell_price': None,
-                    'real_sell_qty': None,
-                    'real_revenue': None,
-                    'real_revenue_rate': None,
-                    'real_revenue_per_days_held': None,
-                    'real_days_held' : None,
-                    'trade_result': None,
-                    'investment_target': investment_target,
-                    type_var : symbol_type,
+                # 가격 데이터 불러오기
+                df_price = fdr.DataReader(symbol=symbol).reset_index()
+                df_price = df_price.rename(columns={
+                    is_date_uppercase: date_var,
+                    is_open_uppercase: open_pr_var,
+                    is_close_uppercase: close_pr_var,
+                    is_high_uppercase: high_pr_var,
+                    is_low_uppercase: low_pr_var,
+                    is_volume_uppercase: daily_trade_stock_var
                 })
 
-        except Exception as e:
-            traceback.print_exc()
-            continue
+                # CCI 데이터 생성
+                df_cci = create_new_cci_data(df_price=df_price)
+                df_current = df_cci.iloc[-1]
 
-    df_order = pd.DataFrame(order_data)
+                # 매수 조건 확인
+                if (
+                    df_cci.iloc[-2][open_cci_index_var] < condition_params["buy_cci_threshold"]
+                    and df_cci.iloc[-1][open_cci_index_var] >= condition_params["buy_cci_threshold"]
+                ):
 
-    date_colmuns = ['buy_order_date', 'real_buy_date', 'sell_order_date', 'real_sell_date', 'maturity_date']
+                    buy_order_price = df_current[close_pr_var]
+                    buy_order_qty = None  
+                    buy_order_number = None
 
-    if not df_order.empty:
-        try:
-            for col in date_colmuns:
-                df_order[col] = pd.to_datetime(df_order[col], errors='coerce', format='ISO8601')
-        except Exception as e:
-            traceback.print_exc()
-            pass
-        if len(df_real_history)>0:
-            for col in date_colmuns:
-                df_real_history[col] = pd.to_datetime(df_real_history[col], errors='coerce', format='ISO8601')
+                    # 잔고 확인 및 주문 실행
+                    try:
+                        df1, df2, balance_summary = client.get_stock_balance(CANO=cano, ACNT_PRDT_CD='01')
+                        budget = float(balance_summary['prvs_rcdl_excc_amt'])
+                        target_budget = 0
 
-            # `df_order`와 `df_real_history` 모두 유효한지 확인
-            if not df_order.empty and not df_order.isna().all(axis=None):
-                if not df_real_history.empty and not df_real_history.isna().all(axis=None):
-                    # 둘 다 유효한 경우 병합
-                    df_real_history = pd.concat([df_real_history, df_order], axis=0, ignore_index=True)
+                        if budget is not None:
+                            target_budget = int(float(budget * 0.1))
+                        buy_order_qty = int(round(float(target_budget) / float(buy_order_price), 0))
+
+                        if buy_order_qty >= 1:
+                            order_result = client.place_order(
+                            PDNO=symbol,
+                            CANO=cano,
+                            ORD_DVSN='00',
+                            ORD_QTY=f'{buy_order_qty}',
+                            ORD_UNPR=f'{buy_order_price}',
+                            order_type='buy'
+                        )
+                            buy_order_number = str(order_result['ODNO'])
+                            # 실제 예산 기반 주문 수량 계산 로직 추가 가능
+                            time.sleep(0.05)  # 요청 제한 조절
+                    except Exception as e:
+                        traceback.print_exc()
+                        pass
+
+                    order_data.append({
+                        'order_index': order_index+add_index,
+                        'buy_order_date': order_date.strftime('%Y-%m-%d'),
+                        symbol_var: symbol,
+                        name_var: symbol_name,
+                        **condition_params,
+                        **performance_metrics,
+                        'buy_order_number': buy_order_number,
+                        'buy_order_price': buy_order_price,
+                        'buy_order_qty': buy_order_qty,
+                        'real_buy_date': None,
+                        'real_buy_price': None,
+                        'real_buy_qty': None,
+                        'sell_order_date': None,
+                        'sell_order_number': None,
+                        'sell_order_price': None,
+                        'sell_order_qty' : None,
+                        'maturity_date': None,
+                        'real_sell_signal':None,
+                        'real_sell_date': None,
+                        'real_sell_price': None,
+                        'real_sell_qty': None,
+                        'real_revenue': None,
+                        'real_revenue_rate': None,
+                        'real_revenue_per_days_held': None,
+                        'real_days_held' : None,
+                        'trade_result': None,
+                        'investment_target': investment_target,
+                        type_var : symbol_type,
+                    })
+
+            except Exception as e:
+                traceback.print_exc()
+                continue
+
+        df_order = pd.DataFrame(order_data)
+
+        date_colmuns = ['buy_order_date', 'real_buy_date', 'sell_order_date', 'real_sell_date', 'maturity_date']
+
+        if not df_order.empty:
+            try:
+                for col in date_colmuns:
+                    df_order[col] = pd.to_datetime(df_order[col], errors='coerce', format='ISO8601')
+            except Exception as e:
+                traceback.print_exc()
+                pass
+            if len(df_real_history)>0:
+                for col in date_colmuns:
+                    df_real_history[col] = pd.to_datetime(df_real_history[col], errors='coerce', format='ISO8601')
+
+                # `df_order`와 `df_real_history` 모두 유효한지 확인
+                if not df_order.empty and not df_order.isna().all(axis=None):
+                    if not df_real_history.empty and not df_real_history.isna().all(axis=None):
+                        # 둘 다 유효한 경우 병합
+                        df_real_history = pd.concat([df_real_history, df_order], axis=0, ignore_index=True)
+                    else:
+                        # 기존 데이터가 없을 경우 새 데이터만 사용
+                        df_real_history = df_order
                 else:
-                    # 기존 데이터가 없을 경우 새 데이터만 사용
+                    if not df_real_history.empty:
+                        # 새 데이터가 없을 경우 기존 데이터만 사용
+                        df_real_history = df_real_history
+                    else:
+                        print("Warning: No valid data to process.")
+                        return pd.DataFrame()  # 빈 DataFrame 반환
+
+                # 중복 제거 및 저장
+                df_real_history = df_real_history.dropna(subset=['buy_order_number'], axis=0, how='all')
+                df_real_history = df_real_history.drop_duplicates(subset=['buy_order_number'], keep='last')
+                df_real_history.to_csv(order_history_csv_path, index=False, encoding='utf-8-sig', quoting=1)
+
+            else:
+                # 기존 파일이 없으면 새로운 데이터 저장
+                if not df_order.empty:
+                    df_order.to_csv(order_history_csv_path, index=False, encoding='utf-8-sig', quoting=1)
                     df_real_history = df_order
-            else:
-                if not df_real_history.empty:
-                    # 새 데이터가 없을 경우 기존 데이터만 사용
-                    df_real_history = df_real_history
                 else:
-                    print("Warning: No valid data to process.")
+                    print("Warning: No data to save.")
                     return pd.DataFrame()  # 빈 DataFrame 반환
-
-            # 중복 제거 및 저장
-            df_real_history = df_real_history.dropna(subset=['buy_order_number'], axis=0, how='all')
-            df_real_history = df_real_history.drop_duplicates(subset=['buy_order_number'], keep='last')
-            df_real_history.to_csv(order_history_csv_path, index=False, encoding='utf-8-sig')
-
-        else:
-            # 기존 파일이 없으면 새로운 데이터 저장
-            if not df_order.empty:
-                df_order.to_csv(order_history_csv_path, index=False, encoding='utf-8-sig')
-                df_real_history = df_order
-            else:
-                print("Warning: No data to save.")
-                return pd.DataFrame()  # 빈 DataFrame 반환
+    except:
+        traceback.print_exc()
+        pass
 
     return df_real_history
 
@@ -1417,8 +1437,8 @@ def run_buy_order():
     now = datetime.now()
     if not is_holiday(now):
         try:
-            # investment_targets = ['win_rate', 'revenue_rate', 'revenue_per_days_held']
-            investment_targets = ['win_rate']
+            investment_targets = ['win_rate', 'revenue_rate', 'revenue_per_days_held']
+            # investment_targets = ['win_rate']
             for investment_target in investment_targets:
                 df_updated = create_buy_order_data(investment_target=investment_target, user_info=user_info1)
                 df_updated = create_buy_order_data(investment_target=investment_target, user_info=user_info2)
@@ -1434,46 +1454,58 @@ def check_buy_order_execution(user_info):
     check_date_str = datetime.now().strftime('%Y%m%d')
     cano = user_info['CANO']
     df_execution, summary_dict = client.get_daily_order_execution(cano, check_date_str, check_date_str)
-    df_execution['odno'] = df_execution['odno'].astype(int).astype(str)  # 00001111 형태를 1111형태로 바꿔서 맞춤
-
-    save_path = f'{daily_order_path}/real_order_history_account_{cano}.csv'
-    df_real_history = pd.read_csv(save_path, dtype={symbol_var:'string', 'sell_order_number':'string'})
-
-    date_colmuns = ['buy_order_date', 'real_buy_date', 'sell_order_date', 'real_sell_date', 'maturity_date']
-
-    if not df_real_history.empty:
-        try:
-            for col in date_colmuns:
-                df_real_history[col] = pd.to_datetime(df_real_history[col], errors='coerce', format='ISO8601')
-        except Exception as e:
-            traceback.print_exc()
-            pass
-
     
-    if not df_execution.empty:
-        for i, x in df_execution.iterrows():
-            order_date = pd.to_datetime(x['ord_dt'], errors='coerce', format='ISO8601')
-            buy_order_number = str(x['odno'])
-            sell_buy_dvsn_cd = x['sll_buy_dvsn_cd'] # 01 매수 02 매도
-            tot_ccld_qty = int(round(float(x['tot_ccld_qty']), 0)) # 총체결수량
-            avg_prvs = int(round(float(x['avg_prvs']), 0)) # 체결평균가 ( 총체결금액 / 총체결수량)
-            condition = df_real_history['buy_order_number']==buy_order_number
+    if len(df_execution) > 0:
+        df_execution['odno'] = df_execution['odno'].astype(int).astype(str)  # 00001111 형태를 1111형태로 바꿔서 맞춤
 
-            if sell_buy_dvsn_cd == '02': ## 매도 01 매수 02
-                df_real_history.loc[condition, 'real_buy_date'] = order_date.strftime('%Y-%m-%d')
-                df_real_history.loc[condition, 'real_buy_price'] = avg_prvs
-                df_real_history.loc[condition, 'real_buy_qty'] = tot_ccld_qty
+    try:
+        save_path = f'{daily_order_path}/real_order_history_account_{cano}.csv'
+
+        date_colmuns = ['buy_order_date', 'real_buy_date', 'sell_order_date', 'real_sell_date', 'maturity_date']
+
+        df_real_history = pd.read_csv(save_path, dtype=str)
+
+        if not df_real_history.empty:
+            try:
+                for col in date_colmuns:
+                    df_real_history[col] = pd.to_datetime(df_real_history[col], errors='coerce', format='ISO8601')
+            except Exception as e:
+                traceback.print_exc()
+                pass
+        
+        if not df_execution.empty:
+            for i, x in df_execution.iterrows():
+                order_date = pd.to_datetime(x['ord_dt'], errors='coerce', format='ISO8601')
+                buy_order_number = str(int(float(x['odno'])))
+                print(buy_order_number)
+                sell_buy_dvsn_cd = x['sll_buy_dvsn_cd'] # 01 매수 02 매도
+                tot_ccld_qty = int(round(float(x['tot_ccld_qty']), 0)) # 총체결수량
+                avg_prvs = int(round(float(x['avg_prvs']), 0)) # 체결평균가 ( 총체결금액 / 총체결수량)
                 
-                if len(df_real_history[condition]['holding_days']) == 0:
-                    pass
-                else:
-                    maturity_date = order_date + timedelta(days=int(df_real_history[condition]['holding_days'].iloc[0].astype('int64')))
-                    df_real_history.loc[condition, 'maturity_date'] = maturity_date.strftime('%Y-%m-%d')
-                
+                if sell_buy_dvsn_cd == '02': ## 매도 01 매수 02
+                    print(df_real_history.dtypes)
+                    condition = df_real_history['buy_order_number']==buy_order_number
+                    print(df_real_history[condition])
+                    df_real_history.loc[condition, 'real_buy_date'] = order_date.strftime('%Y-%m-%d')
+                    print(buy_order_number)
+                    print(avg_prvs)
+                    print(tot_ccld_qty)
+                    df_real_history.loc[condition, 'real_buy_price'] = avg_prvs
+                    df_real_history.loc[condition, 'real_buy_qty'] = tot_ccld_qty
+                    
+                    if len(df_real_history[condition]['holding_days']) == 0:
+                        pass
+                    else:
+                        maturity_date = order_date + timedelta(days=int(df_real_history[condition]['holding_days'].iloc[0].astype('int64')))
+                        df_real_history.loc[condition, 'maturity_date'] = maturity_date.strftime('%Y-%m-%d')
+                    
 
-    df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig')
+        df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
 
-    return df_real_history
+        return df_real_history
+    except:
+        traceback.print_exc()
+        pass
 
 @log_function_call
 def create_sell_order_data(user_info):
@@ -1483,90 +1515,92 @@ def create_sell_order_data(user_info):
     cano = user_info['CANO']
     save_path = f'{daily_order_path}/real_order_history_account_{cano}.csv'
 
-    if os.path.exists(save_path):
-        df_real_history = pd.read_csv(save_path, dtype={symbol_var:'string', 'sell_order_number':'string'})
-    else:
-        df_real_history = pd.DataFrame()
-
     date_colmuns = ['buy_order_date', 'real_buy_date', 'sell_order_date', 'real_sell_date', 'maturity_date']
-
-    if not df_real_history.empty:
+    if os.path.exists(save_path):
         try:
-            for col in date_colmuns:
-                df_real_history[col] = pd.to_datetime(df_real_history[col], errors='coerce', format='ISO8601')
-        except Exception as e:
-            traceback.print_exc()
-            pass
-
-    today_date = pd.Timestamp(datetime.now().date())
-    df_possible_sell_order = df_real_history[df_real_history['sell_order_date'].isna()]
-
-    for i, x in df_possible_sell_order.iterrows():
-        symbol = x[symbol_var]
-        
-        real_buy_price = x['real_buy_price']
-        real_buy_qty = str(x['real_buy_qty'])
-        maturity_date = pd.Timestamp(x['maturity_date'])
-        target_return = x['target_return']
-        stop_loss_cci_threshold = x['stop_loss_cci_threshold']
-
-        target_return_rate = (int(target_return) + tax_rate + fee_rate) / 100
-        target_price = int(real_buy_price) * (1 + (target_return_rate))
-
-        df_price = fdr.DataReader(symbol).reset_index()
-
-        df_price[date_var] = df_price[is_date_uppercase]
-        df_price[open_pr_var] = df_price[is_open_uppercase]
-        df_price[close_pr_var] = df_price[is_close_uppercase]
-        df_price[high_pr_var] = df_price[is_high_uppercase]
-        df_price[low_pr_var] = df_price[is_low_uppercase]
-        df_price[daily_trade_stock_var] = df_price[is_volume_uppercase]
-        df_price[date_var] = pd.to_datetime(df_price[date_var], errors='coerce', format='ISO8601')
-
-        df_cci = create_new_cci_data(df_price)
-
-        sell_order_date = None
-        sell_order_number = ''
-        real_sell_signal = None
-        sell_order_price = ''
-        sell_order_qty = real_buy_qty
-
-        ORD_DVSN = '01' # 시장가
-        if ORD_DVSN == '01':
-            sell_order_price = '0'
-        # elif ORD_DVSN == '02': # 조건부 지정가
-            # sell_order_price = str(int(round(float(df_price.iloc[-1][open_pr_var] - (df_price.iloc[-1][open_pr_var] * 0.2)), 0)))
-        
-
-        try:
-            if today_date >= maturity_date:
-                result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
-                sell_order_number = str(int(result['odno']))
-                real_sell_signal = 'maturity'
-                sell_order_date = datetime.now().strftime('%Y-%m-%d')
-            else:
-                if df_price[close_pr_var].iloc[-1] > target_price:
-                    result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
-                    sell_order_number = str(int(result['odno']))
-                    real_sell_signal = 'reach_target'
-                    sell_order_date = datetime.now().strftime('%Y-%m-%d')
-                elif df_cci[close_cci_index_var].iloc[-1] <= stop_loss_cci_threshold:
-                    result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
-                    sell_order_number = str(int(result['odno']))
-                    real_sell_signal = 'stop_loss'
-                    sell_order_date = datetime.now().strftime('%Y-%m-%d')
-
-                df_real_history.loc[i, 'sell_order_date'] = sell_order_date
-                df_real_history.loc[i, 'sell_order_number'] = sell_order_number
-                df_real_history.loc[i, 'sell_order_price'] = float(sell_order_price)
-                df_real_history.loc[i, 'sell_order_qty'] = float(sell_order_qty)
-                df_real_history.loc[i, 'real_sell_signal'] = real_sell_signal
+            df_real_history = pd.read_csv(save_path, dtype=str)
             
-        except Exception as e:
-            traceback.print_exc()
-            pass
+            if not df_real_history.empty:
+                try:
+                    for col in date_colmuns:
+                        df_real_history[col] = pd.to_datetime(df_real_history[col], errors='coerce', format='ISO8601')
 
-    # df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig')
+                    today_date = pd.Timestamp(datetime.now().date())
+                    df_possible_sell_order = df_real_history[df_real_history['sell_order_date'].isna()]
+
+                    for i, x in df_possible_sell_order.iterrows():
+                        symbol = x[symbol_var]
+                        
+                        real_buy_price = x['real_buy_price']
+                        real_buy_qty = str(int(float(x['real_buy_qty'])))
+                        maturity_date = pd.Timestamp(x['maturity_date'])
+                        target_return = x['target_return']
+                        stop_loss_cci_threshold = x['stop_loss_cci_threshold']
+
+                        target_return_rate = (float(target_return) + tax_rate + fee_rate) / 100
+                        target_price = int(round(float(real_buy_price) * (1 + target_return_rate), 0))
+
+                        df_price = fdr.DataReader(symbol).reset_index()
+
+                        df_price[date_var] = df_price[is_date_uppercase]
+                        df_price[open_pr_var] = df_price[is_open_uppercase]
+                        df_price[close_pr_var] = df_price[is_close_uppercase]
+                        df_price[high_pr_var] = df_price[is_high_uppercase]
+                        df_price[low_pr_var] = df_price[is_low_uppercase]
+                        df_price[daily_trade_stock_var] = df_price[is_volume_uppercase]
+                        df_price[date_var] = pd.to_datetime(df_price[date_var], errors='coerce', format='ISO8601')
+
+                        df_cci = create_new_cci_data(df_price)
+
+                        sell_order_date = None
+                        sell_order_number = ''
+                        real_sell_signal = None
+                        sell_order_price = '0'
+                        sell_order_qty = str(int(float(real_buy_qty)))
+
+                        ORD_DVSN = '01'
+                        if ORD_DVSN == '01' or ORD_DVSN == '06': # 시장가, 장후 시간외 종가
+                            sell_order_price = '0'
+                        elif ORD_DVSN == '07': # 시간외 단일가
+                            sell_order_price = str(int(round(float(df_price.iloc[-1][close_pr_var]), 0)))
+                        # elif ORD_DVSN == '02' : # 조건부 지정가 
+
+                        try:
+                            if today_date >= maturity_date:
+                                result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
+                                sell_order_number = str(int(result['odno']))
+                                real_sell_signal = 'maturity'
+                                sell_order_date = datetime.now().strftime('%Y-%m-%d')
+                            else:
+                                if df_price[close_pr_var].iloc[-1] > target_price:
+                                    result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
+                                    sell_order_number = str(int(result['odno']))
+                                    real_sell_signal = 'reach_target'
+                                    sell_order_date = datetime.now().strftime('%Y-%m-%d')
+                                elif df_cci[close_cci_index_var].iloc[-1] <= stop_loss_cci_threshold:
+                                    result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
+                                    sell_order_number = str(int(result['odno']))
+                                    real_sell_signal = 'stop_loss'
+                                    sell_order_date = datetime.now().strftime('%Y-%m-%d')
+
+                                df_real_history.loc[i, 'sell_order_date'] = sell_order_date
+                                df_real_history.loc[i, 'sell_order_number'] = sell_order_number
+                                df_real_history.loc[i, 'sell_order_price'] = float(sell_order_price)
+                                df_real_history.loc[i, 'sell_order_qty'] = float(sell_order_qty)
+                                df_real_history.loc[i, 'real_sell_signal'] = real_sell_signal
+                            
+                        except Exception as e:
+                            traceback.print_exc()
+                            pass
+
+                    df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
+
+                except Exception as e:
+                    traceback.print_exc()
+                    pass
+
+        except pd.errors.EmptyDataError:
+            traceback.print_exc()
 
     return df_real_history
 
@@ -1579,60 +1613,75 @@ def check_sell_order_execution(user_info):
     execute_date_str = datetime.now().strftime('%Y%m%d')
     
     df_execution, summary_dict = client.get_daily_order_execution(cano, execute_date_str, execute_date_str)
-    df_execution['odno'] = df_execution['odno'].astype(int).astype(str)
+    
+    if len(df_execution) > 0:
+        df_execution['odno'] = df_execution['odno'].astype('int64').astype(str)
 
     save_path = f'{daily_order_path}/real_order_history_account_{cano}.csv'
-    df_real_history = pd.read_csv(save_path, dtype={symbol_var:'string', 'sell_order_number':'string'})
-
     date_colmuns = ['buy_order_date', 'real_buy_date', 'sell_order_date', 'real_sell_date', 'maturity_date']
+    if os.path.exists(save_path):
+        df_real_history = pd.read_csv(save_path, dtype=str)
 
-    if not df_real_history.empty:
-        try:
-            for col in date_colmuns:
-                df_real_history[col] = pd.to_datetime(df_real_history[col], errors='coerce', format='ISO8601')
-        except Exception as e:
-            traceback.print_exc()
-            pass
+        if not df_real_history.empty:
+            try:
+                for col in date_colmuns:
+                    df_real_history[col] = pd.to_datetime(df_real_history[col], errors='coerce', format='ISO8601')
+            except Exception as e:
+                traceback.print_exc()
+                pass
 
     for i, x in df_real_history.iterrows():
         real_buy_date = x['real_buy_date']
-        real_buy_price = int(x['real_buy_price'])
-        sell_order_number = x['sell_order_number']
-
-        try:
-            if pd.notna(sell_order_number) and not df_execution.empty:
-                df_real_sell = df_execution[df_execution['odno'] == sell_order_number].iloc[0]
-                df_real_sell['ord_dt'] = pd.to_datetime(df_real_sell['ord_dt'], errors='coerce', format='ISO8601')
-                
-                real_sell_date = df_real_sell['ord_dt']
-                sell_order_number = int(df_real_sell['odno'])
-                sell_buy_dvsn_cd = df_real_sell['sll_buy_dvsn_cd'] # 01 매수 02 매도
-                real_sell_qty = int(round(float(df_real_sell['tot_ccld_qty']), 0)) # 총체결수량
-                real_sell_price = int(round(float(df_real_sell['avg_prvs']), 0)) # 체결평균가 ( 총체결금액 / 총체결수량)
-
-                fee_amount = round(((real_sell_price * real_sell_qty) * (fee_rate)),0)
-                tax_amount = round(((real_sell_price * real_sell_qty) * (tax_rate)),0)
-                real_revenue = int((real_sell_price - real_buy_price) - (fee_amount + tax_amount))
-
-                real_revenue_rate = ((real_revenue) / real_buy_price) * 100
-
-                real_days_held = (real_sell_date - real_buy_date).days + 1
-                real_revenue_per_days_held = round(float(real_revenue/ real_days_held), 2)
-
-                if sell_buy_dvsn_cd == '01': ## 매도 01 매수 02
-                    df_real_history.loc[i, 'real_sell_date'] = real_sell_date.strftime('%Y-%m-%d')
-                    df_real_history.loc[i, 'real_sell_price'] = real_sell_price
-                    df_real_history.loc[i, 'real_sell_qty'] = real_sell_qty
-                    df_real_history.loc[i, 'real_revenue'] = real_revenue
-                    df_real_history.loc[i, 'real_revenue_rate'] = real_revenue_rate
-                    df_real_history.loc[i, 'real_revenue_per_days_held'] = real_revenue_per_days_held
-                    df_real_history.loc[i, 'real_days_held'] = real_days_held
-        
-        except Exception as e:
-            traceback.print_exc()
+        real_buy_price = x['real_buy_price']
+        if pd.isna(real_buy_price):
             pass
-    
-    df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig')
+        else:
+            real_buy_price = int(float(real_buy_price))
+        
+        sell_order_number = x['sell_order_number']
+        
+        if pd.isna(sell_order_number):
+            pass
+        else:
+            try:
+                sell_order_number = int(float(sell_order_number))
+                if not df_execution.empty:
+                    # 필터링된 결과가 비어 있지 않은지 확인
+                    df_filtered = df_execution[df_execution['odno'] == sell_order_number]
+                    if not df_filtered.empty:
+                        df_real_sell = df_filtered.iloc[0].copy()
+                        df_real_sell['ord_dt'] = pd.to_datetime(df_real_sell['ord_dt'], errors='coerce', format='ISO8601')
+                        
+                        real_sell_date = df_real_sell['ord_dt']
+                        sell_order_number = int(df_real_sell['odno'])
+                        sell_buy_dvsn_cd = df_real_sell['sll_buy_dvsn_cd']  # 01 매수, 02 매도
+                        real_sell_qty = int(round(float(df_real_sell['tot_ccld_qty']), 0))  # 총체결수량
+                        real_sell_price = int(round(float(df_real_sell['avg_prvs']), 0))  # 체결평균가
+                        
+                        fee_amount = round(((real_sell_price * real_sell_qty) * (fee_rate)), 0)
+                        tax_amount = round(((real_sell_price * real_sell_qty) * (tax_rate)), 0)
+                        real_revenue = int(((real_sell_price - real_buy_price) - (fee_amount + tax_amount)) / real_sell_qty)
+                        
+                        real_revenue_rate = ((real_revenue) / real_buy_price) * 100
+                        
+                        real_days_held = (real_sell_date - real_buy_date).days + 1
+                        real_revenue_per_days_held = round(float(real_revenue / real_days_held), 2)
+
+                        if sell_buy_dvsn_cd == '01':  # 01 매도
+                            df_real_history.loc[i, 'real_sell_date'] = real_sell_date.strftime('%Y-%m-%d')
+                            df_real_history.loc[i, 'real_sell_price'] = real_sell_price
+                            df_real_history.loc[i, 'real_sell_qty'] = real_sell_qty
+                            df_real_history.loc[i, 'real_revenue'] = real_revenue
+                            df_real_history.loc[i, 'real_revenue_rate'] = real_revenue_rate
+                            df_real_history.loc[i, 'real_revenue_per_days_held'] = real_revenue_per_days_held
+                            df_real_history.loc[i, 'real_days_held'] = real_days_held
+                    else:
+                        print(f"No matching execution found for sell_order_number: {sell_order_number}")
+            except Exception as e:
+                print(f"Error processing sell order number: {sell_order_number}")
+                traceback.print_exc()
+
+    df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
 
     return df_real_history
 

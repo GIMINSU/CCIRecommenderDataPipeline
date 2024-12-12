@@ -40,8 +40,8 @@ CONFIG = {
     "end_date_str": datetime.now().strftime('%Y%m%d'),
     "holding_days": [10, 20, 30, 40, 50, 60],
     "target_return_values": range(1, 11),
-    "buy_cci_thresholds": [200, 150, 100, 50, 0, -50, -100, -150, -200],
-    "stop_loss_cci_thresholds": [200, 150, 100, 50, 0, -50, -100, -150, -200],
+    "buy_cci_thresholds": [300, 250, 200, 150, 100, 50, 0, -50, -100, -150, -200, -250, -300],
+    "stop_loss_cci_thresholds": [300, 250, 200, 150, 100, 50, 0, -50, -100, -150, -200, -250, -300],
     "search_history_years": ["all"],
 }
 
@@ -97,11 +97,12 @@ def setup_scheduler():
     kr_best_data_trigger = CronTrigger(hour=23, minute=0)
     scheduler.add_job(execute_pipeline, trigger=kr_best_data_trigger, id="kr_best_data")
 
-    kr_reco_data_trigger = CronTrigger(hour=9, minute=00, second=2)
+    # kr_reco_data_trigger = CronTrigger(hour=9, minute=00, second=2)
+    kr_reco_data_trigger = CronTrigger(hour=9, minute=0, second=2)
     scheduler.add_job(run_buy_order, trigger=kr_reco_data_trigger, id='kr_buy_order')
     scheduler.add_job(get_daily_signal_recommendations, trigger=kr_reco_data_trigger, id='kr_reco_data')
 
-    kr_sell_trigger = CronTrigger(hour=15, minute=21)
+    kr_sell_trigger = CronTrigger(hour=15, minute=29)
     scheduler.add_job(run_sell_order, trigger=kr_sell_trigger, id='kr_sell_order')
 
     kr_update_trigger = CronTrigger(hour=15, minute=31)
