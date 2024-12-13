@@ -1113,6 +1113,15 @@ def get_daily_signal_recommendations_sub(best_file_path):
     recent_path = get_latest_best_file(best_file_path)
 
     df_recent = pd.read_csv(recent_path, dtype=str)
+    df_recent['condition_target_return'] = df_recent['condition_target_return'].astype(float)
+    df_recent['condition_holding_days'] = df_recent['condition_holding_days'].astype(float)
+    df_recent['condition_buy_cci_threshold'] = df_recent['condition_buy_cci_threshold'].astype(float)
+    df_recent['condition_stop_loss_cci_threshold'] = df_recent['condition_stop_loss_cci_threshold'].astype(float)
+    df_recent['win_rate'] = df_recent['win_rate'].astype(float)
+    df_recent['count_win'] = df_recent['count_win'].astype(float)
+    df_recent['revenue_rate'] = df_recent['revenue_rate'].astype(float)
+    df_recent['avg_revenue_per_days_held'] = df_recent['avg_revenue_per_days_held'].astype(float)
+    df_recent['avg_days_held'] = df_recent['avg_days_held'].astype(float)
     candidate_list = df_recent[symbol_var].unique().tolist()
 
     today_reco_data =[]
@@ -1134,6 +1143,7 @@ def get_daily_signal_recommendations_sub(best_file_path):
         buy_price = df_price.iloc[-1][is_open_uppercase]
 
         df = update_cci_data(symbol, '0', '0', '')
+        df[open_cci_index_var] = df[open_cci_index_var].astype(float)
         yesterday_open_cci = df.iloc[-2][open_cci_index_var]
         current_open_cci = df.iloc[-1][open_cci_index_var]
         if yesterday_open_cci < condition_buy_cci_threshold and current_open_cci >= condition_buy_cci_threshold:
@@ -1220,19 +1230,20 @@ def get_candidate_list(investment_target, csv_paths):
     # CSV 파일 읽기
     df_recent = pd.read_csv(recent_file_path, dtype=str)
 
-    float_columns = [criteria_var1, criteria_var2, criteria_var3]
-
-    for col in float_columns:
-        df_recent[col] = df_recent[col].astype(float)
-
     # Threshold 설정
     target_to_threshold = {
         'win_rate': ('win_rate', 'count_win', 'avg_days_held'),
         'revenue_rate': ('revenue_rate', 'count_win', 'avg_days_held'),
         'revenue_per_days_held': ('avg_revenue_per_days_held', 'win_rate', 'avg_days_held')
     }
-    
+
     criteria_var1, criteria_var2, criteria_var3 = target_to_threshold[investment_target]
+    float_columns = [criteria_var1, criteria_var2, criteria_var3]
+    
+
+    for col in float_columns:
+        df_recent[col] = df_recent[col].astype(float)
+
     
     candidate_threshold1 = df_recent[criteria_var1].quantile(0.7)  
     candidate_threshold2 = df_recent[criteria_var2].quantile(0.3)
@@ -1290,18 +1301,18 @@ def create_buy_order_data(investment_target, user_info):
                 # 조건 및 데이터 초기화
                 condition_params = {
                     "target_return": float(df_symbol['condition_target_return']),
-                    "holding_days": int(df_symbol['condition_holding_days']),
-                    "buy_cci_threshold": int(df_symbol['condition_buy_cci_threshold']),
-                    "stop_loss_cci_threshold": int(df_symbol['condition_stop_loss_cci_threshold'])
+                    "holding_days": float(df_symbol['condition_holding_days']),
+                    "buy_cci_threshold": float(df_symbol['condition_buy_cci_threshold']),
+                    "stop_loss_cci_threshold": float(df_symbol['condition_stop_loss_cci_threshold'])
                 }
                 
                 performance_metrics = {
                     "win_rate": float(df_symbol['win_rate']),
-                    "count_win": int(df_symbol['count_win']),
+                    "count_win": float(df_symbol['count_win']),
                     "revenue_rate": float(df_symbol['revenue_rate']),
-                    "avg_revenue_per_days_held": int(df_symbol['avg_revenue_per_days_held']),
-                    "avg_days_held": int(df_symbol['avg_days_held']),
-                    "total_revenue": int(df_symbol['total_revenue'])
+                    "avg_revenue_per_days_held": float(df_symbol['avg_revenue_per_days_held']),
+                    "avg_days_held": float(df_symbol['avg_days_held']),
+                    "total_revenue": float(df_symbol['total_revenue'])
                 }
 
                 # 가격 데이터 불러오기
@@ -1324,7 +1335,6 @@ def create_buy_order_data(investment_target, user_info):
                     df_cci.iloc[-2][open_cci_index_var] < condition_params["buy_cci_threshold"]
                     and df_cci.iloc[-1][open_cci_index_var] >= condition_params["buy_cci_threshold"]
                 ):
-
                     buy_order_price = df_current[close_pr_var]
                     buy_order_qty = None  
                     buy_order_number = None
