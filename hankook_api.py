@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 import time
 from config import HankookConfig, DefaultValueConfig as dvc
+import traceback
 
 
 class KISAPIClient:
@@ -65,6 +66,7 @@ class KISAPIClient:
             }]).to_csv(csv_file_name, index=False, encoding="utf-8-sig")
             return access_token
         else:
+            traceback.print_exc()
             raise Exception(f"Failed to issue access token: {response.json()}")
 
     def _get_headers(self, access_token, tr_id):
@@ -113,6 +115,7 @@ class KISAPIClient:
                 )
                 raise Exception(error_message)
         except Exception as e:
+            traceback.print_exc()
             print(f"Error occurred during API request: {e}")
             raise
 

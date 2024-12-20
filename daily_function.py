@@ -6,6 +6,8 @@ from config import DefaultValueConfig as dvc, LocalFilePathConfig as lfpc, Hanko
 user_info1 = hc.kr_account['account1']
 user_info2 = hc.kr_account['account2']
 
+user_info_list = [user_info1, user_info2]
+
 from hankook_api import KISAPIClient
 
 from slack_message import send_simple_message
@@ -177,15 +179,15 @@ def create_kr_symbol_list(read_dummy : str, save_dummy : str, end_date_str=''):
     
     Output
     return_df(DataFrame)
-    +---+-------+--------+------------------+-------------+
-    |   | type  | symbol |       name       | total_stock |
-    +---+-------+--------+------------------+-------------+
-    | 0 | stock | 000660 |    SK하이닉스    |  728002365  |
-    | 1 | stock | 373220 |  LG에너지솔루션  |  234000000  |
-    | 2 | stock | 207940 | 삼성바이오로직스 |  71174000   |
-    | 3 | stock | 005380 |      현대차      |  209416191  |
-    | 4 | stock | 068270 |     셀트리온     |  217021190  |
-    +---+-------+--------+------------------+-------------+
+    +---+-------+--------+------------------+-------------+-----------------+
+    |   | type  | symbol |       name       | total_stock |     marcap      |
+    +---+-------+--------+------------------+-------------+-----------------+
+    | 0 | stock | 005930 |     삼성전자     | 5969782550  | 333710844545000 |
+    | 1 | stock | 000660 |    SK하이닉스    |  728002365  | 127254813402000 |
+    | 2 | stock | 373220 |  LG에너지솔루션  |  234000000  | 91845000000000  |
+    | 3 | stock | 207940 | 삼성바이오로직스 |  71174000   | 68611736000000  |
+    | 4 | stock | 005380 |      현대차      |  209416191  | 44396232492000  |
+    +---+-------+--------+------------------+-------------+-----------------+
     """
 
     func_start_datetime = datetime.now()
@@ -282,27 +284,39 @@ def load_min_date_from_csv():
     min_date_file = os.path.join(file_path, file_name)
     if os.path.exists(min_date_file):
         try:
-            df = pd.read_csv(min_date_file, index_col=symbol_var, dtype=str)
+            df = pd.read_csv(min_date_file, dtype=str)
             if not df.empty:
                 df['min_date'] = pd.to_datetime(df['min_date'], errors='coerce', format='ISO8601')
             return df
         except pd.errors.EmptyDataError:
-            return pd.DataFrame(columns=[symbol_var, 'min_date']).set_index(symbol_var)
+            return pd.DataFrame(columns=[symbol_var, 'min_date'])
 
     else:
-        return pd.DataFrame(columns=[symbol_var, 'min_date']).set_index(symbol_var)
+        return pd.DataFrame(columns=[symbol_var, 'min_date'])
 
 def save_min_date(symbol: str, min_date):
-    file_path = lfpc.min_price_date_csv_path 
-    file_name = 'kr_stock_price_min_date.csv'
+    """CSV 파일에 심볼별 최소 날짜를 저장합니다."""
+    file_path = lfpc.min_price_date_csv_path
+    file_name = "kr_stock_price_min_date.csv"
     os.makedirs(file_path, exist_ok=True)
     min_date_file = os.path.join(file_path, file_name)
 
     df_min_dates = load_min_date_from_csv()
 
-    df_min_dates.loc[symbol] = pd.to_datetime(min_date, errors='coerce', format='ISO8601')
+    # 새로운 데이터 추가 처리
+    if symbol in df_min_dates[symbol_var].values:
+        df_min_dates.loc[df_min_dates[symbol_var] == symbol, 'min_date'] = pd.to_datetime(min_date, errors="coerce", format="ISO8601")
+    else:
+        new_row = pd.DataFrame({symbol_var: [symbol], 'min_date': [pd.to_datetime(min_date, errors="coerce", format="ISO8601")]})
+        
+        # 빈 데이터프레임 확인 및 처리
+        if df_min_dates.empty:
+            df_min_dates = new_row
+        else:
+            df_min_dates = pd.concat([df_min_dates, new_row], ignore_index=True)
 
-    df_min_dates.to_csv(min_date_file, encoding='utf-8-sig', quoting=1)
+    # CSV 저장
+    df_min_dates.to_csv(min_date_file, index=False, encoding="utf-8-sig", quoting=1)
 
 def get_min_date(symbol: str):
     df_min_dates = load_min_date_from_csv()
@@ -329,6 +343,15 @@ def update_daily_stock_price(symbol, read_dummy, save_dummy, end_date_str='', st
 
     Output:
     Returns a single DataFrame containing the updated daily stock price information.
+    +---+---------------------+------+------+------+-------+--------+-----------------------+---------------------+---------+----------+---------+--------+-------------------+
+    |   |        Date         | Open | High | Low  | Close | Volume |        Change         |        date         | open_pr | close_pr | high_pr | low_pr | daily_trade_stock |
+    +---+---------------------+------+------+------+-------+--------+-----------------------+---------------------+---------+----------+---------+--------+-------------------+
+    | 0 | 2000-08-24 00:00:00 | 6260 | 6300 | 6100 | 6220  | 634031 |          nan          | 2000-08-24 00:00:00 |  6260   |   6220   |  6300   |  6100  |      634031       |
+    | 1 | 2000-08-25 00:00:00 | 6180 | 6400 | 6110 | 6400  | 439289 |  0.02893890675241151  | 2000-08-25 00:00:00 |  6180   |   6400   |  6400   |  6110  |      439289       |
+    | 2 | 2000-08-28 00:00:00 | 6340 | 6380 | 6260 | 6330  | 352697 | -0.010937500000000044 | 2000-08-28 00:00:00 |  6340   |   6330   |  6380   |  6260  |      352697       |
+    | 3 | 2000-08-29 00:00:00 | 6320 | 6380 | 6160 | 6220  | 335311 | -0.017377567140600347 | 2000-08-29 00:00:00 |  6320   |   6220   |  6380   |  6160  |      335311       |
+    | 4 | 2000-08-30 00:00:00 | 6140 | 6190 | 6020 | 6030  | 474778 | -0.030546623794212246 | 2000-08-30 00:00:00 |  6140   |   6030   |  6190   |  6020  |      474778       |
+    +---+---------------------+------+------+------+-------+--------+-----------------------+---------------------+---------+----------+---------+--------+-------------------+
     """
 
     start_date = pd.to_datetime(start_date_str, errors='coerce', format='ISO8601')
@@ -524,6 +547,18 @@ def update_daily_stock_price(symbol, read_dummy, save_dummy, end_date_str='', st
     
 
 def create_new_cci_data(df_price):
+    """
+    Output : DataFrame
+    +------+---------------------+-------+-------+-------+-------+----------+-----------------------+---------------------+---------+----------+---------+--------+-------------------+--------------------+--------------------+--------------------+--------------------+--------------------+--------------------+---------------------+---------------------+
+    |      |        Date         | Open  | High  |  Low  | Close |  Volume  |        Change         |        date         | open_pr | close_pr | high_pr | low_pr | daily_trade_stock |      close_TP      |      open_TP       |     close_sma      |      open_sma      |     close_mad      |      open_mad      |      close_cci      |      open_cci       |
+    +------+---------------------+-------+-------+-------+-------+----------+-----------------------+---------------------+---------+----------+---------+--------+-------------------+--------------------+--------------------+--------------------+--------------------+--------------------+--------------------+---------------------+---------------------+
+    | 5992 | 2024-12-09 00:00:00 | 53500 | 54600 | 53200 | 53400 | 26227680 | -0.012939001848428888 | 2024-12-09 00:00:00 |  53500  |  53400   |  54600  | 53200  |     26227680      | 53733.333333333336 | 53766.666666666664 | 54656.666666666664 | 54661.666666666664 | 1722.3333333333335 | 1751.6666666666667 | -35.739629701309404 |  -34.0627973358706  |
+    | 5993 | 2024-12-10 00:00:00 | 54500 | 54500 | 53700 | 54000 | 20783970 | 0.011235955056179803  | 2024-12-10 00:00:00 |  54500  |  54000   |  54500  | 53700  |     20783970      | 54066.666666666664 | 54233.333333333336 | 54683.33333333333  |      54670.0       | 1698.3333333333335 | 1743.3333333333333 | -24.20673863264629  | -16.698534098151598 |
+    | 5994 | 2024-12-11 00:00:00 | 53600 | 54200 | 53400 | 54000 | 14565947 |          0.0          | 2024-12-11 00:00:00 |  53600  |  54000   |  54200  | 53400  |     14565947      | 53866.666666666664 | 53733.333333333336 | 54808.333333333336 |      54765.0       | 1585.8333333333335 | 1651.4999999999995 |  -39.5866176212999  | -41.64564200894801  |
+    | 5995 | 2024-12-12 00:00:00 | 54000 | 56500 | 53900 | 55900 | 33476698 |  0.03518518518518521  | 2024-12-12 00:00:00 |  54000  |  55900   |  56500  | 53900  |     33476698      | 55433.333333333336 |      54800.0       | 55053.33333333333  | 54973.333333333336 | 1403.3333333333335 | 1463.9999999999993 | 18.052256532066853  | -7.893139040680138  |
+    | 5996 | 2024-12-13 00:00:00 | 55800 | 56300 | 55500 | 55700 | 5165076  | -0.003577817531305927 | 2024-12-13 00:00:00 |  55800  |  55700   |  56300  | 55500  |      5165076      | 55833.333333333336 | 55866.666666666664 | 55211.666666666664 | 55186.666666666664 | 1307.1666666666672 | 1339.9999999999995 |  31.70555484721006  |  33.8308457711443   |
+    +------+---------------------+-------+-------+-------+-------+----------+-----------------------+---------------------+---------+----------+---------+--------+-------------------+--------------------+--------------------+--------------------+--------------------+--------------------+--------------------+---------------------+---------------------+
+    """
     # Ensure required columns are numeric
     numeric_columns = [high_pr_var, low_pr_var, open_pr_var, close_pr_var, daily_trade_stock_var]
     for col in numeric_columns:
@@ -718,7 +753,8 @@ def create_trade_history_by_symbol(
                                     'condition_holding_days': x,
                                     'condition_target_return': target_return_percent,
                                     'condition_buy_cci_threshold': buy_cci_threshold,
-                                    'condition_stop_loss_cci_threshold': stop_loss_cci_threshold
+                                    'condition_stop_loss_cci_threshold': stop_loss_cci_threshold,
+                                    'trade_result' : 'reach_target'
                                 })
                             elif stop_loss_idx is not None:
                                 stop_loss_date = future_data.loc[stop_loss_idx, date_var]
@@ -737,7 +773,8 @@ def create_trade_history_by_symbol(
                                     'condition_holding_days': x,
                                     'condition_target_return': target_return_percent,
                                     'condition_buy_cci_threshold': buy_cci_threshold,
-                                    'condition_stop_loss_cci_threshold': stop_loss_cci_threshold
+                                    'condition_stop_loss_cci_threshold': stop_loss_cci_threshold,
+                                    'trade_result' : 'stop_loss'
                                 })
                             else:
                                 maturity_date = future_data.iloc[-1][date_var]
@@ -756,7 +793,8 @@ def create_trade_history_by_symbol(
                                     'condition_holding_days': x,
                                     'condition_target_return': target_return_percent,
                                     'condition_buy_cci_threshold': buy_cci_threshold,
-                                    'condition_stop_loss_cci_threshold': stop_loss_cci_threshold
+                                    'condition_stop_loss_cci_threshold': stop_loss_cci_threshold,
+                                    'trade_result' : 'maturity'
                                 })
 
     # 리스트를 DataFrame으로 변환
@@ -858,210 +896,210 @@ def process_all_stocks_with_save_optimized(
     print(f'Start. process_all_stocks_with_save_optimized, Time: {func_start_datetime.strftime("%Y-%m-%d %H:%M:%S")}')
 
     # Start resource monitoring
-    stop_event = start_monitoring_in_background()
-    if stop_event is None:
-        raise RuntimeError("Failed to start monitoring. 'stop_event' is None.")
+    # stop_event = start_monitoring_in_background()
+    # if stop_event is None:
+    #     raise RuntimeError("Failed to start monitoring. 'stop_event' is None.")
 
-    try:
+    # try:
 
-        stock_symbols = df_kr[df_kr[type_var]=='stock'].loc[:299][symbol_var].tolist() ## Note : 전체 주식 중 300개에 대해서만 거래 시뮬레이션 구동
-        etf_symbols = df_kr[df_kr[type_var]=='etf'].reset_index(drop=True).loc[:299][symbol_var].tolist() ## Note : 전체 ETF 중 300개에 대해서만 거래 시뮬레이션 구동
+    stock_symbols = df_kr[df_kr[type_var]=='stock'].loc[:299][symbol_var].tolist() ## Note : 전체 주식 중 300개에 대해서만 거래 시뮬레이션 구동
+    etf_symbols = df_kr[df_kr[type_var]=='etf'].reset_index(drop=True).loc[:299][symbol_var].tolist() ## Note : 전체 ETF 중 300개에 대해서만 거래 시뮬레이션 구동
 
-        all_symbols = stock_symbols + etf_symbols
-        processed_symbols = []
+    all_symbols = stock_symbols + etf_symbols
+    processed_symbols = []
 
-        # 진행 상태 저장 경로
-        os.makedirs(daily_progress_final_csvs_path, exist_ok=True)
-        progress_file_path = os.path.join(daily_progress_final_csvs_path, f'progress_{end_date_str}.csv')
+    # 진행 상태 저장 경로
+    os.makedirs(daily_progress_final_csvs_path, exist_ok=True)
+    progress_file_path = os.path.join(daily_progress_final_csvs_path, f'progress_{end_date_str}.csv')
 
-        # 진행 상태 로드
-        if os.path.exists(progress_file_path):
-            processed_symbols = pd.read_csv(progress_file_path, dtype=str)[symbol_var].tolist()
+    # 진행 상태 로드
+    if os.path.exists(progress_file_path):
+        processed_symbols = pd.read_csv(progress_file_path, dtype=str)[symbol_var].tolist()
 
-        done_count = len(processed_symbols)
-        remaining_symbols = [sym for sym in all_symbols if sym not in processed_symbols]
-        print(f"Total symbols: {len(all_symbols)}, Remaining symbols: {len(remaining_symbols)}")
+    done_count = len(processed_symbols)
+    remaining_symbols = [sym for sym in all_symbols if sym not in processed_symbols]
+    print(f"Total symbols: {len(all_symbols)}, Remaining symbols: {len(remaining_symbols)}")
 
-        # 최적 조건 결과 파일 경로
-        win_save_path = os.path.join(daily_best_win_csvs_path, f'final_best_win_{end_date_str}.csv')
-        return_save_path = os.path.join(daily_best_return_csvs_path, f'final_best_return_{end_date_str}.csv')
-        return_per_days_held_save_path = os.path.join(daily_best_return_per_days_held_csvs_path, f'final_best_return_per_days_held_{end_date_str}.csv')
+    # 최적 조건 결과 파일 경로
+    win_save_path = os.path.join(daily_best_win_csvs_path, f'final_best_win_{end_date_str}.csv')
+    return_save_path = os.path.join(daily_best_return_csvs_path, f'final_best_return_{end_date_str}.csv')
+    return_per_days_held_save_path = os.path.join(daily_best_return_per_days_held_csvs_path, f'final_best_return_per_days_held_{end_date_str}.csv')
 
-        os.makedirs(daily_best_win_csvs_path, exist_ok=True)
-        os.makedirs(daily_best_return_csvs_path, exist_ok=True)
-        os.makedirs(daily_best_return_per_days_held_csvs_path, exist_ok=True)
-
-
-        # 기존 데이터 로드
-        if os.path.exists(win_save_path):
-            final_best_win_df = pd.read_csv(win_save_path, dtype=str)
-        else:
-            final_best_win_df = pd.DataFrame()
-
-        if os.path.exists(return_save_path):
-            final_best_return_df = pd.read_csv(return_save_path, dtype=str)
-        else:
-            final_best_return_df = pd.DataFrame()
-
-        if os.path.exists(return_per_days_held_save_path):
-            final_best_return_per_days_held_df = pd.read_csv(return_per_days_held_save_path, dtype=str)
-        else:
-            final_best_return_per_days_held_df = pd.DataFrame()
-
-        # 병렬 처리
-        num_workers = min(len(remaining_symbols), multiprocessing.cpu_count() - 1)
-        with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            futures = {
-                executor.submit(
-                process_symbol,
-                sym,  # 심볼
-                holding_days,  # 보유 기간
-                target_return_values,  # 목표 수익률
-                search_history_years,  # 검색할 연도
-                buy_cci_thresholds,  # CCI 구매 임계값
-                stop_loss_cci_thresholds,  # 손절 임계값
-                read_dummy,  # 읽기 설정
-                save_dummy,  # 저장 설정
-                df_kr,  # 한국 주식 데이터프레임
-                end_date_str  # 종료 날짜
-                ): sym for sym in remaining_symbols
-                }
-
-            for future in as_completed(futures):
-                try:
-                    result, symbol = future.result()
-                    if result:
-                        df_all_trades, stock_name, stock_type, last_price_date = result
-                        # df_all_trades가 빈 DataFrame인지 확인
-                        if df_all_trades.empty:
-                            print(f"df_all_trades is empty for symbol: {symbol}. Skipping further processing.")
-
-                            # 진행 상태 업데이트만 수행
-                            processed_symbols.append(symbol)
-                            pd.DataFrame({symbol_var: processed_symbols}, dtype=str).to_csv(progress_file_path, index=False, encoding='utf-8-sig', quoting=1)
-                            done_count += 1
-                            print(f"Processed and passed symbol: {symbol}, {done_count}/{len(all_symbols)}")
-                            continue  # 다음 심볼로 넘어감
-                        try:
-                            # 날짜 열 통일
-                            date_columns = ['reach_target_date', 'stop_loss_date', 'maturity_date']
-                            for col in date_columns:
-                                df_all_trades[col] = pd.to_datetime(df_all_trades[col], errors='coerce')
-
-                            # 가격 열 통일
-                            price_columns = ['reach_target_price', 'stop_loss_price', 'maturity_price']
-                            for col in price_columns:
-                                df_all_trades[col] = pd.to_numeric(df_all_trades[col], errors='coerce')
-
-                            # 이후 .bfill() 호출
-                            df_all_trades['sell_date'] = pd.to_datetime(
-                                df_all_trades[date_columns].bfill(axis=1).iloc[:, 0],
-                                errors='coerce'
-                            )
-
-                            df_all_trades['sell_price'] = pd.to_numeric(
-                                df_all_trades[price_columns].bfill(axis=1).iloc[:, 0],
-                                errors='coerce'
-                            )
-
-                            df_all_trades['sell_price'] = pd.to_numeric(df_all_trades['sell_price'], errors='coerce')
-                            df_all_trades['reach_target_amount'] = df_all_trades['sell_price'] - df_all_trades['buy_price']
-                            df_all_trades['reach_target_amount_per_days_held'] = round(df_all_trades['reach_target_amount'] / df_all_trades['days_held'], 2)
-
-                            df_all_trades['win_dummy'] = 0
-                            df_all_trades['win_dummy'] = np.where(df_all_trades['sell_price'] > df_all_trades['buy_price'], 1, df_all_trades['win_dummy'])
-
-                            df_all_trades['lose_dummy'] = 0
-                            df_all_trades['lose_dummy'] = np.where(df_all_trades['sell_price'] < df_all_trades['buy_price'], 1, df_all_trades['lose_dummy'])
-
-                            grouped_cols = ['condition_holding_days', 'condition_target_return', 'condition_buy_cci_threshold', 'condition_stop_loss_cci_threshold']
-
-                            for sy in search_history_years:
-                                df_r1 = df_all_trades[df_all_trades['condition_history_search_year'] == sy].reset_index(drop=True)
-                                if df_r1.empty:
-                                    print(f"search_year_{sy}_trades_empty: {symbol}. Skipping further processing.")
-                                    continue
-
-                                df_results = df_r1.groupby(grouped_cols).agg(
-                                    count_buy_date = ('buy_date', 'nunique'),
-                                    count_reach_target_date = ('reach_target_date', 'nunique'),
-                                    count_stop_loss_date = ('stop_loss_date', 'nunique'),
-                                    count_maturity_date = ('maturity_date', 'nunique'),
-                                    count_win = ('win_dummy', 'sum'),
-                                    count_lose = ('lose_dummy', 'sum'),
-                                    avg_revenue_per_days_held= ('reach_target_amount_per_days_held', 'mean'),
-                                    avg_days_held = ('days_held', 'mean'),
-                                    total_buy_price = ('buy_price', 'sum'),
-                                    total_reach_target_price = ('reach_target_price', 'sum'),
-                                    total_stop_loss_price = ('stop_loss_price', 'sum'),
-                                    total_maturity_price = ('maturity_price', 'sum'),
-                                    total_sell_price = ('sell_price', 'sum')
-                                    ).reset_index()
-
-                                df_results['win_rate'] = round(df_results['count_win'] / df_results['count_buy_date'] * 100, 2)
-                                df_results['lose_rate'] = round(df_results['count_lose'] / df_results['count_buy_date'] * 100, 2)
+    os.makedirs(daily_best_win_csvs_path, exist_ok=True)
+    os.makedirs(daily_best_return_csvs_path, exist_ok=True)
+    os.makedirs(daily_best_return_per_days_held_csvs_path, exist_ok=True)
 
 
-                                df_results['total_revenue'] = round(df_results['total_sell_price'] - df_results['total_buy_price'], 0)
-                                df_results['revenue_rate'] = round((df_results['total_revenue'] / df_results['total_buy_price'])*100, 2)
-                                df_results['reach_target_date_count_per_buy_date_count'] = round(df_results['count_reach_target_date'] / df_results['count_buy_date']*100, 2)
-                                df_results['stop_loss_date_count_per_buy_date_count'] = round(df_results['count_stop_loss_date'] / df_results['count_buy_date']*100, 2)
-                                df_results['maturity_date_count_per_buy_date_count'] = round(df_results['count_maturity_date'] / df_results['count_buy_date']*100, 2)
-                                df_results['search_years'] = sy
-                                df_results['last_price_date'] = last_price_date
-                                df_results[symbol_var] = symbol
-                                df_results[name_var] = stock_name
-                                df_results[type_var] = stock_type
+    # 기존 데이터 로드
+    if os.path.exists(win_save_path):
+        final_best_win_df = pd.read_csv(win_save_path, dtype=str)
+    else:
+        final_best_win_df = pd.DataFrame()
 
-                                best_win_condition = df_results.loc[df_results['win_rate'].idxmax()].copy()
-                                best_revenue_condition = df_results.loc[df_results['revenue_rate'].idxmax()].copy()
-                                best_revenue_days_held_condition = df_results.loc[df_results['avg_revenue_per_days_held'].idxmax()].copy()
+    if os.path.exists(return_save_path):
+        final_best_return_df = pd.read_csv(return_save_path, dtype=str)
+    else:
+        final_best_return_df = pd.DataFrame()
 
-                                # 최적 조건 데이터 추가
-                                final_best_win_df = pd.concat(
-                                    [final_best_win_df, pd.DataFrame([best_win_condition])], 
-                                    ignore_index=True
-                                    )
-                                
-                                final_best_return_df = pd.concat(
-                                    [final_best_return_df, pd.DataFrame([best_revenue_condition])],
-                                    ignore_index=True
-                                    )
-                                final_best_return_per_days_held_df = pd.concat(
-                                    [final_best_return_per_days_held_df, pd.DataFrame([best_revenue_days_held_condition])],
-                                    ignore_index=True
-                                    )
-                                    
-                                # 최적 조건 결과 저장
-                                final_best_win_df.to_csv(win_save_path, index=False, encoding='utf-8-sig', quoting=1)
-                                final_best_return_df.to_csv(return_save_path, index=False, encoding='utf-8-sig', quoting=1)
-                                final_best_return_per_days_held_df.to_csv(return_per_days_held_save_path, index=False, encoding='utf-8-sig', quoting=1)
-                        
-                        except Exception as e:
-                            print(f"Error processing symbol {symbol}: {e}")
-                            traceback.print_exc()
-                            continue
+    if os.path.exists(return_per_days_held_save_path):
+        final_best_return_per_days_held_df = pd.read_csv(return_per_days_held_save_path, dtype=str)
+    else:
+        final_best_return_per_days_held_df = pd.DataFrame()
 
-                        # 진행 상태 업데이트
+    # 병렬 처리
+    num_workers = min(len(remaining_symbols), multiprocessing.cpu_count() -1) ## Note : 구동 안정성 확보 및 CPU 모니터링 구동을 위해 프로세서 1개는 제외
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        futures = {
+            executor.submit(
+            process_symbol,
+            sym,  # 심볼
+            holding_days,  # 보유 기간
+            target_return_values,  # 목표 수익률
+            search_history_years,  # 검색할 연도
+            buy_cci_thresholds,  # CCI 구매 임계값
+            stop_loss_cci_thresholds,  # 손절 임계값
+            read_dummy,  # 읽기 설정
+            save_dummy,  # 저장 설정
+            df_kr,  # 한국 주식 데이터프레임
+            end_date_str  # 종료 날짜
+            ): sym for sym in remaining_symbols
+            }
+
+        for future in as_completed(futures):
+            try:
+                result, symbol = future.result()
+                if result:
+                    df_all_trades, stock_name, stock_type, last_price_date = result
+                    # df_all_trades가 빈 DataFrame인지 확인
+                    if df_all_trades.empty:
+                        print(f"df_all_trades is empty for symbol: {symbol}. Skipping further processing.")
+
+                        # 진행 상태 업데이트만 수행
                         processed_symbols.append(symbol)
                         pd.DataFrame({symbol_var: processed_symbols}, dtype=str).to_csv(progress_file_path, index=False, encoding='utf-8-sig', quoting=1)
-
                         done_count += 1
                         print(f"Processed and passed symbol: {symbol}, {done_count}/{len(all_symbols)}")
-                    else:
-                        traceback.print_exc()
-                        print(f"No trades found for symbol {symbol}. Skipping.")
-                except Exception as e:
-                    traceback.print_exc()
-                    print(f"Error processing future for symbol {futures[future]}: {e}")
+                        continue  # 다음 심볼로 넘어감
+                    try:
+                        # 날짜 열 통일
+                        date_columns = ['reach_target_date', 'stop_loss_date', 'maturity_date']
+                        for col in date_columns:
+                            df_all_trades[col] = pd.to_datetime(df_all_trades[col], errors='coerce', format='ISO8601')
 
-    finally:
-        # Stop resource monitoring
-        try:
-            stop_monitoring(stop_event)
-        except Exception as e:
-            print(f"Error stopping monitoring: {e}")
-            traceback.print_exc()
+                        # 가격 열 통일
+                        price_columns = ['reach_target_price', 'stop_loss_price', 'maturity_price']
+                        for col in price_columns:
+                            df_all_trades[col] = pd.to_numeric(df_all_trades[col], errors='coerce')
+
+                        # 이후 .bfill() 호출
+                        df_all_trades['sell_date'] = pd.to_datetime(
+                            df_all_trades[date_columns].bfill(axis=1).iloc[:, 0],
+                            errors='coerce', format='ISO8601'
+                        )
+
+                        df_all_trades['sell_price'] = pd.to_numeric(
+                            df_all_trades[price_columns].bfill(axis=1).iloc[:, 0],
+                            errors='coerce'
+                        )
+
+                        df_all_trades['sell_price'] = pd.to_numeric(df_all_trades['sell_price'], errors='coerce')
+                        df_all_trades['reach_target_amount'] = df_all_trades['sell_price'] - df_all_trades['buy_price']
+                        df_all_trades['reach_target_amount_per_days_held'] = round(df_all_trades['reach_target_amount'] / df_all_trades['days_held'], 2)
+
+                        df_all_trades['win_dummy'] = 0
+                        df_all_trades['win_dummy'] = np.where(df_all_trades['sell_price'] > df_all_trades['buy_price'], 1, df_all_trades['win_dummy'])
+
+                        df_all_trades['lose_dummy'] = 0
+                        df_all_trades['lose_dummy'] = np.where(df_all_trades['sell_price'] < df_all_trades['buy_price'], 1, df_all_trades['lose_dummy'])
+
+                        grouped_cols = ['condition_holding_days', 'condition_target_return', 'condition_buy_cci_threshold', 'condition_stop_loss_cci_threshold']
+
+                        for sy in search_history_years:
+                            df_r1 = df_all_trades[df_all_trades['condition_history_search_year'] == sy].reset_index(drop=True)
+                            if df_r1.empty:
+                                print(f"search_year_{sy}_trades_empty: {symbol}. Skipping further processing.")
+                                continue
+
+                            df_results = df_r1.groupby(grouped_cols).agg(
+                                count_buy_date = ('buy_date', 'nunique'),
+                                count_reach_target_date = ('reach_target_date', 'nunique'),
+                                count_stop_loss_date = ('stop_loss_date', 'nunique'),
+                                count_maturity_date = ('maturity_date', 'nunique'),
+                                count_win = ('win_dummy', 'sum'),
+                                count_lose = ('lose_dummy', 'sum'),
+                                avg_revenue_per_days_held= ('reach_target_amount_per_days_held', 'mean'),
+                                avg_days_held = ('days_held', 'mean'),
+                                total_buy_price = ('buy_price', 'sum'),
+                                total_reach_target_price = ('reach_target_price', 'sum'),
+                                total_stop_loss_price = ('stop_loss_price', 'sum'),
+                                total_maturity_price = ('maturity_price', 'sum'),
+                                total_sell_price = ('sell_price', 'sum')
+                                ).reset_index()
+
+                            df_results['win_rate'] = round(df_results['count_win'] / df_results['count_buy_date'] * 100, 2)
+                            df_results['lose_rate'] = round(df_results['count_lose'] / df_results['count_buy_date'] * 100, 2)
+
+
+                            df_results['total_revenue'] = round(df_results['total_sell_price'] - df_results['total_buy_price'], 0)
+                            df_results['revenue_rate'] = round((df_results['total_revenue'] / df_results['total_buy_price'])*100, 2)
+                            df_results['reach_target_date_count_per_buy_date_count'] = round(df_results['count_reach_target_date'] / df_results['count_buy_date']*100, 2)
+                            df_results['stop_loss_date_count_per_buy_date_count'] = round(df_results['count_stop_loss_date'] / df_results['count_buy_date']*100, 2)
+                            df_results['maturity_date_count_per_buy_date_count'] = round(df_results['count_maturity_date'] / df_results['count_buy_date']*100, 2)
+                            df_results['search_years'] = sy
+                            df_results['last_price_date'] = last_price_date
+                            df_results[symbol_var] = symbol
+                            df_results[name_var] = stock_name
+                            df_results[type_var] = stock_type
+
+                            best_win_condition = df_results.loc[df_results['win_rate'].idxmax()].copy()
+                            best_revenue_condition = df_results.loc[df_results['revenue_rate'].idxmax()].copy()
+                            best_revenue_days_held_condition = df_results.loc[df_results['avg_revenue_per_days_held'].idxmax()].copy()
+
+                            # 최적 조건 데이터 추가
+                            final_best_win_df = pd.concat(
+                                [final_best_win_df, pd.DataFrame([best_win_condition])], 
+                                ignore_index=True
+                                )
+                            
+                            final_best_return_df = pd.concat(
+                                [final_best_return_df, pd.DataFrame([best_revenue_condition])],
+                                ignore_index=True
+                                )
+                            final_best_return_per_days_held_df = pd.concat(
+                                [final_best_return_per_days_held_df, pd.DataFrame([best_revenue_days_held_condition])],
+                                ignore_index=True
+                                )
+                                
+                            # 최적 조건 결과 저장
+                            final_best_win_df.to_csv(win_save_path, index=False, encoding='utf-8-sig', quoting=1)
+                            final_best_return_df.to_csv(return_save_path, index=False, encoding='utf-8-sig', quoting=1)
+                            final_best_return_per_days_held_df.to_csv(return_per_days_held_save_path, index=False, encoding='utf-8-sig', quoting=1)
+                    
+                    except Exception as e:
+                        print(f"Error processing symbol {symbol}: {e}")
+                        traceback.print_exc()
+                        continue
+
+                    # 진행 상태 업데이트
+                    processed_symbols.append(symbol)
+                    pd.DataFrame({symbol_var: processed_symbols}, dtype=str).to_csv(progress_file_path, index=False, encoding='utf-8-sig', quoting=1)
+
+                    done_count += 1
+                    print(f"Processed and passed symbol: {symbol}, {done_count}/{len(all_symbols)}")
+                else:
+                    traceback.print_exc()
+                    print(f"No trades found for symbol {symbol}. Skipping.")
+            except Exception as e:
+                traceback.print_exc()
+                print(f"Error processing future for symbol {futures[future]}: {e}")
+
+    # finally:
+    #     # Stop resource monitoring
+    #     try:
+    #         stop_monitoring(stop_event)
+    #     except Exception as e:
+    #         print(f"Error stopping monitoring: {e}")
+    #         traceback.print_exc()
 
 
     func_end_datetime = datetime.now()
@@ -1069,7 +1107,7 @@ def process_all_stocks_with_save_optimized(
     send_simple_message(message)
     print(message)
 
-def get_latest_best_file(directory, date_format="%Y%m%d"):
+def get_latest_file(directory, date_format="%Y%m%d"):
     """
     특정 디렉토리 내 파일 목록에서 파일명에 포함된 날짜를 기준으로 가장 최신 파일을 반환합니다.
     
@@ -1110,7 +1148,7 @@ def get_latest_best_file(directory, date_format="%Y%m%d"):
 
 
 def get_daily_signal_recommendations_sub(best_file_path):
-    recent_path = get_latest_best_file(best_file_path)
+    recent_path = get_latest_file(best_file_path)
 
     df_recent = pd.read_csv(recent_path, dtype=str)
     df_recent['condition_target_return'] = df_recent['condition_target_return'].astype(float)
@@ -1225,7 +1263,7 @@ def get_candidate_list(investment_target, csv_paths):
         raise ValueError(f"Invalid investment target: {investment_target}")
     
     best_file_path = target_to_path[investment_target]
-    recent_file_path = get_latest_best_file(best_file_path)
+    recent_file_path = get_latest_file(best_file_path)
 
     # CSV 파일 읽기
     df_recent = pd.read_csv(recent_file_path, dtype=str)
@@ -1338,7 +1376,6 @@ def create_buy_order_data(investment_target, user_info):
                     buy_order_price = df_current[close_pr_var]
                     buy_order_qty = None  
                     buy_order_number = None
-
                     # 잔고 확인 및 주문 실행
                     try:
                         df1, df2, balance_summary = client.get_stock_balance(CANO=cano, ACNT_PRDT_CD='01')
@@ -1346,8 +1383,11 @@ def create_buy_order_data(investment_target, user_info):
                         target_budget = 0
 
                         if budget is not None:
-                            target_budget = int(float(budget * 0.1))
-                        buy_order_qty = int(round(float(target_budget) / float(buy_order_price), 0))
+                            if budget < 1000000:  # 예산이 100만원 미만이면 종목 당 1개 주문
+                                buy_order_qty = 1
+                            else: # 예산이 100만원 이상이면 종목 당 예산의 10% 주문
+                                target_budget = int(float(budget * 0.1))
+                                buy_order_qty = int(round(float(target_budget) / float(buy_order_price), 0))
 
                         if buy_order_qty >= 1:
                             order_result = client.place_order(
@@ -1358,7 +1398,7 @@ def create_buy_order_data(investment_target, user_info):
                             ORD_UNPR=f'{buy_order_price}',
                             order_type='buy'
                         )
-                            buy_order_number = str(order_result['ODNO'])
+                            buy_order_number = str(int(float(order_result['ODNO'])))
                             # 실제 예산 기반 주문 수량 계산 로직 추가 가능
                             time.sleep(0.05)  # 요청 제한 조절
                     except Exception as e:
@@ -1458,8 +1498,13 @@ def run_buy_order():
             investment_targets = ['win_rate', 'revenue_rate', 'revenue_per_days_held']
             # investment_targets = ['win_rate']
             for investment_target in investment_targets:
-                df_updated = create_buy_order_data(investment_target=investment_target, user_info=user_info1)
-                df_updated = create_buy_order_data(investment_target=investment_target, user_info=user_info2)
+                for user_info in user_info_list:
+                    try:
+                        df_updated = create_buy_order_data(investment_target=investment_target, user_info=user_info)
+                    except:
+                        traceback.print_exc()
+                        pass
+
         except Exception as e:
             traceback.print_exc()
             pass
@@ -1478,43 +1523,39 @@ def check_buy_order_execution(user_info):
 
     try:
         save_path = f'{daily_order_path}/real_order_history_account_{cano}.csv'
+        if os.path.exists(save_path):
+            date_colmuns = ['buy_order_date', 'real_buy_date', 'sell_order_date', 'real_sell_date', 'maturity_date']
 
-        date_colmuns = ['buy_order_date', 'real_buy_date', 'sell_order_date', 'real_sell_date', 'maturity_date']
+            df_real_history = pd.read_csv(save_path, dtype=str)
 
-        df_real_history = pd.read_csv(save_path, dtype=str)
+            if not df_real_history.empty:
+                try:
+                    for col in date_colmuns:
+                        df_real_history[col] = pd.to_datetime(df_real_history[col], errors='coerce', format='ISO8601')
+                except Exception as e:
+                    traceback.print_exc()
+                    pass
+        else:
+            return None
 
-        if not df_real_history.empty:
-            try:
-                for col in date_colmuns:
-                    df_real_history[col] = pd.to_datetime(df_real_history[col], errors='coerce', format='ISO8601')
-            except Exception as e:
-                traceback.print_exc()
-                pass
-        
         if not df_execution.empty:
             for i, x in df_execution.iterrows():
                 order_date = pd.to_datetime(x['ord_dt'], errors='coerce', format='ISO8601')
                 buy_order_number = str(int(float(x['odno'])))
-                print(buy_order_number)
                 sell_buy_dvsn_cd = x['sll_buy_dvsn_cd'] # 01 매수 02 매도
                 tot_ccld_qty = int(round(float(x['tot_ccld_qty']), 0)) # 총체결수량
                 avg_prvs = int(round(float(x['avg_prvs']), 0)) # 체결평균가 ( 총체결금액 / 총체결수량)
                 
                 if sell_buy_dvsn_cd == '02': ## 매도 01 매수 02
-                    print(df_real_history.dtypes)
                     condition = df_real_history['buy_order_number']==buy_order_number
-                    print(df_real_history[condition])
                     df_real_history.loc[condition, 'real_buy_date'] = order_date.strftime('%Y-%m-%d')
-                    print(buy_order_number)
-                    print(avg_prvs)
-                    print(tot_ccld_qty)
                     df_real_history.loc[condition, 'real_buy_price'] = avg_prvs
                     df_real_history.loc[condition, 'real_buy_qty'] = tot_ccld_qty
                     
                     if len(df_real_history[condition]['holding_days']) == 0:
                         pass
                     else:
-                        maturity_date = order_date + timedelta(days=int(df_real_history[condition]['holding_days'].iloc[0].astype('int64')))
+                        maturity_date = order_date + timedelta(days=int(df_real_history[condition]['holding_days'].iloc[0]))
                         df_real_history.loc[condition, 'maturity_date'] = maturity_date.strftime('%Y-%m-%d')
                     
 
@@ -1620,7 +1661,10 @@ def create_sell_order_data(user_info):
         except pd.errors.EmptyDataError:
             traceback.print_exc()
 
-    return df_real_history
+        return df_real_history
+    else:
+        None
+
 
 @log_function_call
 def check_sell_order_execution(user_info):
@@ -1637,6 +1681,7 @@ def check_sell_order_execution(user_info):
 
     save_path = f'{daily_order_path}/real_order_history_account_{cano}.csv'
     date_colmuns = ['buy_order_date', 'real_buy_date', 'sell_order_date', 'real_sell_date', 'maturity_date']
+    
     if os.path.exists(save_path):
         df_real_history = pd.read_csv(save_path, dtype=str)
 
@@ -1647,6 +1692,8 @@ def check_sell_order_execution(user_info):
             except Exception as e:
                 traceback.print_exc()
                 pass
+    else:
+        return None
 
     for i, x in df_real_history.iterrows():
         real_buy_date = x['real_buy_date']
@@ -1662,7 +1709,7 @@ def check_sell_order_execution(user_info):
             pass
         else:
             try:
-                sell_order_number = int(float(sell_order_number))
+                sell_order_number = str(int(float(sell_order_number)))
                 if not df_execution.empty:
                     # 필터링된 결과가 비어 있지 않은지 확인
                     df_filtered = df_execution[df_execution['odno'] == sell_order_number]
@@ -1676,11 +1723,11 @@ def check_sell_order_execution(user_info):
                         real_sell_qty = int(round(float(df_real_sell['tot_ccld_qty']), 0))  # 총체결수량
                         real_sell_price = int(round(float(df_real_sell['avg_prvs']), 0))  # 체결평균가
                         
-                        fee_amount = round(((real_sell_price * real_sell_qty) * (fee_rate)), 0)
-                        tax_amount = round(((real_sell_price * real_sell_qty) * (tax_rate)), 0)
-                        real_revenue = int(((real_sell_price - real_buy_price) - (fee_amount + tax_amount)) / real_sell_qty)
+                        fee_amount = round(((real_sell_price) * (fee_rate)), 0)
+                        tax_amount = round(((real_sell_price) * (tax_rate)), 0)
+                        real_revenue = int((real_sell_price - real_buy_price) - (fee_amount + tax_amount))
                         
-                        real_revenue_rate = ((real_revenue) / real_buy_price) * 100
+                        real_revenue_rate = (real_revenue / real_buy_price) * 100
                         
                         real_days_held = (real_sell_date - real_buy_date).days + 1
                         real_revenue_per_days_held = round(float(real_revenue / real_days_held), 2)
@@ -1707,26 +1754,23 @@ def check_sell_order_execution(user_info):
 def run_sell_order():
     now = datetime.now()
     if not is_holiday(now):
-        try:
-            df_real_history = check_buy_order_execution(user_info1)
-            df_real_history = create_sell_order_data(user_info1)
-
-            df_real_history = check_buy_order_execution(user_info2)
-            df_real_history = create_sell_order_data(user_info2)
-        except Exception as e:
-            traceback.print_exc()
-            pass
+        for user_info in user_info_list:
+            try:
+                df_real_history = check_buy_order_execution(user_info)
+                df_real_history = create_sell_order_data(user_info)
+            except:
+                traceback.print_exc()
+                pass
 
 @log_function_call
 def update_order_execution():
     now = datetime.now()
     if not is_holiday(now):
-        try:
-            df = check_buy_order_execution(user_info1)
-            df = check_sell_order_execution(user_info1)
+        for user_info in user_info_list:
+            try:
+                df = check_buy_order_execution(user_info)
+                df = check_sell_order_execution(user_info)
 
-            df = check_buy_order_execution(user_info2)
-            df = check_sell_order_execution(user_info2)
-        except Exception as e:
-            traceback.print_exc()
-            pass
+            except Exception as e:
+                traceback.print_exc()
+                pass
