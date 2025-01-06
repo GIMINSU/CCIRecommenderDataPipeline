@@ -40,14 +40,15 @@ CONFIG = {
     "end_date_str": datetime.now().strftime('%Y%m%d'),
     "holding_days": [10, 20, 30, 40, 50, 60],
     "target_return_values": range(1, 11),
-    "buy_cci_thresholds": [300, 250, 200, 150, 100, 50, 0, -50, -100, -150, -200, -250, -300],
-    "stop_loss_cci_thresholds": [300, 250, 200, 150, 100, 50, 0, -50, -100, -150, -200, -250, -300],
+    "buy_cci_thresholds": [200, 150, 100, 50, 0, -50, -100, -150, -200],
+    "stop_loss_cci_thresholds": [200, 150, 100, 50, 0, -50, -100, -150, -200],
     "search_history_years": ["all"],
 }
 
 # 주요 작업 실행
 def execute_pipeline():
     now = datetime.now()
+    end_date_str = now.strftime('%Y%m%d')
     logging.info("Pipeline execution started.")
     try:
         if not is_holiday(now):
@@ -58,7 +59,7 @@ def execute_pipeline():
             df_kr = create_kr_symbol_list(
                 read_dummy=CONFIG["read_dummy"],
                 save_dummy=CONFIG["save_dummy"],
-                end_date_str=CONFIG["end_date_str"]
+                end_date_str=end_date_str
             )
             if df_kr is None or df_kr.empty:
                 raise ValueError("create_kr_symbol_list returned an empty DataFrame.")
@@ -75,7 +76,7 @@ def execute_pipeline():
                 stop_loss_cci_thresholds=CONFIG["stop_loss_cci_thresholds"],
                 read_dummy=CONFIG["read_dummy"],
                 save_dummy=CONFIG["save_dummy"],
-                end_date_str=CONFIG["end_date_str"]
+                end_date_str=end_date_str
             )
             logging.info("Step 2 Complete: All stocks processed and results saved!")
             return "Execution pipeline completed successfully!"
@@ -94,7 +95,7 @@ def setup_scheduler():
     scheduler.start()
 
     # 한국 시장 스케줄
-    kr_best_data_trigger = CronTrigger(hour=22, minute=00)
+    kr_best_data_trigger = CronTrigger(hour=15, minute=35)
     scheduler.add_job(execute_pipeline, trigger=kr_best_data_trigger, id="kr_best_data")
 
     kr_reco_data_trigger = CronTrigger(hour=9, minute=0)

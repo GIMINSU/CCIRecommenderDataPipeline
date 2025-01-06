@@ -23,6 +23,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing
 
 import os
+import shutil
 import re
 import traceback
 
@@ -72,10 +73,13 @@ close_cci_index_var = dvc.close_cci_index_var
 
 
 log_file_path = lfpc.log_file_path
+daily_cci_index_csvs_path = lfpc.daily_cci_index_csvs_path
+
 daily_trades_csvs_path = lfpc.daily_trades_csvs_path
 daily_best_win_csvs_path = lfpc.daily_best_win_csvs_path
 daily_best_return_csvs_path = lfpc.daily_best_return_csvs_path
 daily_best_return_per_days_held_csvs_path = lfpc.daily_best_return_per_days_held_csvs_path
+temp_best_csvs_path = lfpc.temp_best_csvs_path
 
 daily_progress_final_csvs_path = lfpc.daily_progress_final_csvs_path
 
@@ -921,28 +925,37 @@ def process_all_stocks_with_save_optimized(
     print(f"Total symbols: {len(all_symbols)}, Remaining symbols: {len(remaining_symbols)}")
 
     # 최적 조건 결과 파일 경로
-    win_save_path = os.path.join(daily_best_win_csvs_path, f'final_best_win_{end_date_str}.csv')
-    return_save_path = os.path.join(daily_best_return_csvs_path, f'final_best_return_{end_date_str}.csv')
-    return_per_days_held_save_path = os.path.join(daily_best_return_per_days_held_csvs_path, f'final_best_return_per_days_held_{end_date_str}.csv')
 
+    win_file_name = f'final_best_win_{end_date_str}.csv'
+    return_file_name = f'final_best_return_{end_date_str}.csv'
+    return_per_days_held_file_name = f'final_best_return_per_days_held_{end_date_str}.csv'
+
+    temp_win_save_path = os.path.join(temp_best_csvs_path, win_file_name)
+    temp_return_save_path = os.path.join(temp_best_csvs_path, return_file_name)
+    temp_return_per_days_held_save_path = os.path.join(temp_best_csvs_path, return_per_days_held_file_name)
+
+    win_save_path = os.path.join(daily_best_win_csvs_path, win_file_name)
+    return_save_path = os.path.join(daily_best_return_csvs_path, return_file_name)
+    return_per_days_held_save_path = os.path.join(daily_best_return_per_days_held_csvs_path, return_per_days_held_file_name)
+
+    os.makedirs(temp_best_csvs_path, exist_ok=True)
     os.makedirs(daily_best_win_csvs_path, exist_ok=True)
     os.makedirs(daily_best_return_csvs_path, exist_ok=True)
     os.makedirs(daily_best_return_per_days_held_csvs_path, exist_ok=True)
 
-
-    # 기존 데이터 로드
-    if os.path.exists(win_save_path):
-        final_best_win_df = pd.read_csv(win_save_path, dtype=str)
+    ## 생성 도중 중단된 파일이 있으면 중단된 지점부터 다시 시작
+    if os.path.exists(temp_win_save_path):
+        final_best_win_df = pd.read_csv(temp_win_save_path, dtype=str)
     else:
         final_best_win_df = pd.DataFrame()
-
-    if os.path.exists(return_save_path):
-        final_best_return_df = pd.read_csv(return_save_path, dtype=str)
+    
+    if os.path.exists(temp_return_save_path):
+        final_best_return_df = pd.read_csv(temp_return_save_path, dtype=str)
     else:
         final_best_return_df = pd.DataFrame()
 
-    if os.path.exists(return_per_days_held_save_path):
-        final_best_return_per_days_held_df = pd.read_csv(return_per_days_held_save_path, dtype=str)
+    if os.path.exists(temp_return_per_days_held_save_path):
+        final_best_return_per_days_held_df = pd.read_csv(temp_return_per_days_held_save_path, dtype=str)
     else:
         final_best_return_per_days_held_df = pd.DataFrame()
 
@@ -1071,9 +1084,9 @@ def process_all_stocks_with_save_optimized(
                                 )
                                 
                             # 최적 조건 결과 저장
-                            final_best_win_df.to_csv(win_save_path, index=False, encoding='utf-8-sig', quoting=1)
-                            final_best_return_df.to_csv(return_save_path, index=False, encoding='utf-8-sig', quoting=1)
-                            final_best_return_per_days_held_df.to_csv(return_per_days_held_save_path, index=False, encoding='utf-8-sig', quoting=1)
+                            final_best_win_df.to_csv(temp_win_save_path, index=False, encoding='utf-8-sig', quoting=1)
+                            final_best_return_df.to_csv(temp_return_save_path, index=False, encoding='utf-8-sig', quoting=1)
+                            final_best_return_per_days_held_df.to_csv(temp_return_per_days_held_save_path, index=False, encoding='utf-8-sig', quoting=1)
                     
                     except Exception as e:
                         print(f"Error processing symbol {symbol}: {e}")
@@ -1083,7 +1096,6 @@ def process_all_stocks_with_save_optimized(
                     # 진행 상태 업데이트
                     processed_symbols.append(symbol)
                     pd.DataFrame({symbol_var: processed_symbols}, dtype=str).to_csv(progress_file_path, index=False, encoding='utf-8-sig', quoting=1)
-
                     done_count += 1
                     print(f"Processed and passed symbol: {symbol}, {done_count}/{len(all_symbols)}")
                 else:
@@ -1101,13 +1113,20 @@ def process_all_stocks_with_save_optimized(
     #         print(f"Error stopping monitoring: {e}")
     #         traceback.print_exc()
 
+    ## 완료된 임시 파일 최종 저장 폴더로 이동
+    shutil.move(temp_win_save_path, win_save_path)
+    shutil.move(temp_return_save_path, return_save_path)
+    shutil.move(temp_return_per_days_held_save_path, return_per_days_held_save_path)
+
+    ## 완료 메시지 전송
+    print(f"Completed. win_save_path: {win_save_path}, return_save_path: {return_save_path}, return_per_days_held_save_path: {return_per_days_held_save_path}")
 
     func_end_datetime = datetime.now()
     message = f'End. process_all_stocks_with_save_optimized, Time: {func_end_datetime.strftime("%Y-%m-%d %H:%M:%S")}, running minutes: {int((func_end_datetime - func_start_datetime).total_seconds() / 60)}'
     send_simple_message(message)
     print(message)
 
-def get_latest_file(directory, date_format="%Y%m%d"):
+def get_latest_best_file(directory, date_format="%Y%m%d"):
     """
     특정 디렉토리 내 파일 목록에서 파일명에 포함된 날짜를 기준으로 가장 최신 파일을 반환합니다.
     
@@ -1148,9 +1167,9 @@ def get_latest_file(directory, date_format="%Y%m%d"):
 
 
 def get_daily_signal_recommendations_sub(best_file_path):
-    recent_path = get_latest_file(best_file_path)
+    recent_best_path = get_latest_best_file(best_file_path)
 
-    df_recent = pd.read_csv(recent_path, dtype=str)
+    df_recent = pd.read_csv(recent_best_path, dtype=str)
     df_recent['condition_target_return'] = df_recent['condition_target_return'].astype(float)
     df_recent['condition_holding_days'] = df_recent['condition_holding_days'].astype(float)
     df_recent['condition_buy_cci_threshold'] = df_recent['condition_buy_cci_threshold'].astype(float)
@@ -1263,7 +1282,7 @@ def get_candidate_list(investment_target, csv_paths):
         raise ValueError(f"Invalid investment target: {investment_target}")
     
     best_file_path = target_to_path[investment_target]
-    recent_file_path = get_latest_file(best_file_path)
+    recent_file_path = get_latest_best_file(best_file_path)
 
     # CSV 파일 읽기
     df_recent = pd.read_csv(recent_file_path, dtype=str)
@@ -1277,15 +1296,18 @@ def get_candidate_list(investment_target, csv_paths):
 
     criteria_var1, criteria_var2, criteria_var3 = target_to_threshold[investment_target]
     float_columns = [criteria_var1, criteria_var2, criteria_var3]
-    
+
 
     for col in float_columns:
         df_recent[col] = df_recent[col].astype(float)
 
     
-    candidate_threshold1 = df_recent[criteria_var1].quantile(0.7)  
+    # candidate_threshold1 = df_recent[criteria_var1].quantile(0.7)
+    candidate_threshold1 = 90.0
     candidate_threshold2 = df_recent[criteria_var2].quantile(0.3)
-    candidate_threshold3 = df_recent[criteria_var3].quantile(0.3)
+    candidate_threshold3 = df_recent[criteria_var3].quantile(1)
+
+    print(candidate_threshold1, candidate_threshold2, candidate_threshold3)
 
     # 후보 리스트 생성
     candidate_list = df_recent[
@@ -1304,10 +1326,53 @@ def create_buy_order_data(investment_target, user_info):
     client = KISAPIClient(user_info)
 
     cano = user_info['CANO']
-    df_recent, candidate_list = get_candidate_list(
-        investment_target=investment_target,
-        csv_paths=investment_target_best_csv_paths
-    )
+
+    # CSV 파일 경로 설정
+    target_to_path = {
+        'win_rate': investment_target_best_csv_paths.get('win_rate'),
+        'revenue_rate': investment_target_best_csv_paths.get('revenue_rate'),
+        'revenue_per_days_held': investment_target_best_csv_paths.get('revenue_per_days_held')
+    }
+    
+    if investment_target not in target_to_path:
+        raise ValueError(f"Invalid investment target: {investment_target}")
+    
+    best_file_path = target_to_path[investment_target]
+    recent_file_path = get_latest_best_file(best_file_path)
+
+    # CSV 파일 읽기
+    df_recent = pd.read_csv(recent_file_path, dtype=str)
+    df_stock = df_recent[df_recent[type_var] == 'stock']
+
+    candidate_data = []
+
+    for symbol in df_stock[symbol_var]:
+        df_cci = pd.read_csv(f'{daily_cci_index_csvs_path}/kr_cci_symbol_{symbol}.csv', dtype=str)
+        pre_open_cci = float(df_cci.iloc[-1][open_cci_index_var])
+        condition_buy_cci_threshold = float(df_recent[df_recent[symbol_var] == symbol]['condition_buy_cci_threshold'].iloc[-1])
+        win_rate = float(df_recent[df_recent[symbol_var] == symbol]['win_rate'].iloc[-1]  )
+        count_win = float(df_recent[df_recent[symbol_var] == symbol]['count_win'].iloc[-1])
+        avg_days_held = float(df_recent[df_recent[symbol_var] == symbol]['avg_days_held'].iloc[-1])
+        revenue_rate = float(df_recent[df_recent[symbol_var] == symbol]['revenue_rate'].iloc[-1])
+
+        r_dict = {
+                symbol_var: symbol,
+                'pre_open_cci': pre_open_cci,
+                'condition_buy_cci_threshold': condition_buy_cci_threshold,
+                'win_rate': win_rate,
+                'count_win': count_win,
+                'avg_days_held': avg_days_held,
+                'revenue_rate': revenue_rate
+            }
+
+        if pre_open_cci < condition_buy_cci_threshold:
+            candidate_data.append(r_dict)
+
+    df_candidate = pd.DataFrame(candidate_data).sort_values(by=['win_rate', 'revenue_rate'], ascending=False).reset_index(drop=True)
+
+    candidate_list = df_candidate[symbol_var].tolist()
+
+    send_simple_message(f'오늘의 전체 매수 후보 종목 수 : {len(candidate_list)}')
 
     order_index = 1
     df_real_history = pd.DataFrame()
@@ -1367,12 +1432,15 @@ def create_buy_order_data(investment_target, user_info):
                 # CCI 데이터 생성
                 df_cci = create_new_cci_data(df_price=df_price)
                 df_current = df_cci.iloc[-1]
+                yesterday_open_cci = round(df_cci.iloc[-2][open_cci_index_var],1)
+                current_open_cci = round(df_current[open_cci_index_var],1)
 
                 # 매수 조건 확인
                 if (
-                    df_cci.iloc[-2][open_cci_index_var] < condition_params["buy_cci_threshold"]
-                    and df_cci.iloc[-1][open_cci_index_var] >= condition_params["buy_cci_threshold"]
+                    yesterday_open_cci < condition_params["buy_cci_threshold"]
+                    and current_open_cci >= condition_params["buy_cci_threshold"]
                 ):
+                    send_simple_message(f'{candidate_list.index(symbol)}, symbol: {symbol}, symbol_name: {symbol_name}, 전날 CCI: {yesterday_open_cci}, 오늘 CCI: {current_open_cci}, 매수 기준 CCI: {condition_params["buy_cci_threshold"]}, 매수조건 성립여부 :  {yesterday_open_cci < condition_params["buy_cci_threshold"] and current_open_cci >= condition_params["buy_cci_threshold"]}')
                     buy_order_price = df_current[close_pr_var]
                     buy_order_qty = None  
                     buy_order_number = None
@@ -1388,7 +1456,6 @@ def create_buy_order_data(investment_target, user_info):
                             else: # 예산이 100만원 이상이면 종목 당 예산의 10% 주문
                                 target_budget = int(float(budget * 0.1))
                                 buy_order_qty = int(round(float(target_budget) / float(buy_order_price), 0))
-
                         if buy_order_qty >= 1:
                             order_result = client.place_order(
                             PDNO=symbol,
@@ -1403,6 +1470,7 @@ def create_buy_order_data(investment_target, user_info):
                             time.sleep(0.05)  # 요청 제한 조절
                     except Exception as e:
                         traceback.print_exc()
+                        send_simple_message(f'{traceback.print_exc()}')
                         pass
 
                     order_data.append({
@@ -1495,8 +1563,8 @@ def run_buy_order():
     now = datetime.now()
     if not is_holiday(now):
         try:
-            investment_targets = ['win_rate', 'revenue_rate', 'revenue_per_days_held']
-            # investment_targets = ['win_rate']
+            # investment_targets = ['win_rate', 'revenue_rate', 'revenue_per_days_held']
+            investment_targets = ['win_rate']
             for investment_target in investment_targets:
                 for user_info in user_info_list:
                     try:
@@ -1514,26 +1582,38 @@ def check_buy_order_execution(user_info):
     
     client = KISAPIClient(user_info)
 
-    check_date_str = datetime.now().strftime('%Y%m%d')
+    check_end_date = datetime.now()
+    check_start_date = check_end_date - timedelta(days=90)
+    
+    check_end_date_str = check_end_date.strftime('%Y%m%d')
+    check_start_date_str = check_start_date.strftime('%Y%m%d')
+
     cano = user_info['CANO']
-    df_execution, summary_dict = client.get_daily_order_execution(cano, check_date_str, check_date_str)
+    df_execution, summary_dict = client.get_daily_order_execution(cano, check_start_date_str, check_end_date_str)
     
     if len(df_execution) > 0:
-        df_execution['odno'] = df_execution['odno'].astype(int).astype(str)  # 00001111 형태를 1111형태로 바꿔서 맞춤
+        for col in df_execution.columns:
+            if 'date' in col:
+                df_execution[col] = pd.to_datetime(df_execution[col], errors='coerce', format='ISO8601')
+            elif 'qty' in col:
+                df_execution[col] = df_execution[col].fillna(0).astype(float).astype(int)
+            elif 'prvs' in col:
+                df_execution[col] = df_execution[col].fillna(0).astype(float).astype(int)   
+        
+        df_execution['odno'] = pd.to_numeric(df_execution['odno'], errors='coerce').fillna(0).astype(int)
 
     try:
         save_path = f'{daily_order_path}/real_order_history_account_{cano}.csv'
         if os.path.exists(save_path):
-            date_colmuns = ['buy_order_date', 'real_buy_date', 'sell_order_date', 'real_sell_date', 'maturity_date']
-
             df_real_history = pd.read_csv(save_path, dtype=str)
 
             if not df_real_history.empty:
                 try:
-                    for col in date_colmuns:
-                        df_real_history[col] = pd.to_datetime(df_real_history[col], errors='coerce', format='ISO8601')
+                    for col in df_real_history.columns:
+                        if 'holding_days' in col:
+                            df_real_history['holding_days'] = pd.to_numeric(df_real_history['holding_days'], errors='coerce').fillna(0).astype(int)
                 except Exception as e:
-                    traceback.print_exc()
+                    send_simple_message(f'{traceback.print_exc()}')
                     pass
         else:
             return None
@@ -1563,7 +1643,7 @@ def check_buy_order_execution(user_info):
 
         return df_real_history
     except:
-        traceback.print_exc()
+        send_simple_message(f'{traceback.print_exc()}')
         pass
 
 @log_function_call
@@ -1650,6 +1730,7 @@ def create_sell_order_data(user_info):
                             
                         except Exception as e:
                             traceback.print_exc()
+                            send_simple_message(f'{traceback.print_exc()}')
                             pass
 
                     df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
