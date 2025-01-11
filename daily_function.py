@@ -99,6 +99,14 @@ investment_target_best_csv_paths = {
 tax_rate = 0.0018
 fee_rate = 0.00007
 
+from config import GoogleDriveConfig
+gs_account = GoogleDriveConfig.SERVICE_ACCOUNT_FILE
+
+import gspread as gs
+
+# 서비스 계정 인증 및 스프레드시트 열기
+gc = gs.service_account(filename=gs_account)
+
 # 한국 주식 시장 개장 시간 확인
 def is_market_open():
     now = datetime.now()
@@ -563,6 +571,9 @@ def create_new_cci_data(df_price):
     | 5996 | 2024-12-13 00:00:00 | 55800 | 56300 | 55500 | 55700 | 5165076  | -0.003577817531305927 | 2024-12-13 00:00:00 |  55800  |  55700   |  56300  | 55500  |      5165076      | 55833.333333333336 | 55866.666666666664 | 55211.666666666664 | 55186.666666666664 | 1307.1666666666672 | 1339.9999999999995 |  31.70555484721006  |  33.8308457711443   |
     +------+---------------------+-------+-------+-------+-------+----------+-----------------------+---------------------+---------+----------+---------+--------+-------------------+--------------------+--------------------+--------------------+--------------------+--------------------+--------------------+---------------------+---------------------+
     """
+
+    df_price.columns
+
     # Ensure required columns are numeric
     numeric_columns = [high_pr_var, low_pr_var, open_pr_var, close_pr_var, daily_trade_stock_var]
     for col in numeric_columns:
@@ -587,7 +598,7 @@ def create_new_cci_data(df_price):
 
 
 def update_cci_data(symbol, read_dummy, save_dummy, end_date_str):
-    file_path = lfpc.daily_cci_index_csvs_path
+    file_path = daily_cci_index_csvs_path
     file_name = f'kr_cci_symbol_{symbol}.csv'
     save_path = os.path.join(file_path, file_name)
 
@@ -1374,7 +1385,6 @@ def create_buy_order_data(investment_target, user_info):
 
     send_simple_message(f'오늘의 전체 매수 후보 종목 수 : {len(candidate_list)}')
 
-    order_index = 1
     df_real_history = pd.DataFrame()
 
     os.makedirs(f'{daily_order_path}', exist_ok=True)
@@ -1384,14 +1394,13 @@ def create_buy_order_data(investment_target, user_info):
             df_real_history = pd.read_csv(order_history_csv_path, dtype=str)
             if not df_real_history.empty:
                 df_real_history = pd.read_csv(order_history_csv_path, dtype=str)
-                existed_last_order_index = len(df_real_history)
-                order_index = existed_last_order_index+1
         else:
             pass
 
         order_data = []
 
-        order_date = datetime.now().date()
+        order_date = datetime.now()
+        order_date_str = order_date.strftime('%Y%m%d')
         
         for symbol in candidate_list:
             add_index = int(candidate_list.index(symbol)) + 1
@@ -1456,6 +1465,7 @@ def create_buy_order_data(investment_target, user_info):
                             else: # 예산이 100만원 이상이면 종목 당 예산의 10% 주문
                                 target_budget = int(float(budget * 0.1))
                                 buy_order_qty = int(round(float(target_budget) / float(buy_order_price), 0))
+
                         if buy_order_qty >= 1:
                             order_result = client.place_order(
                             PDNO=symbol,
@@ -1469,12 +1479,14 @@ def create_buy_order_data(investment_target, user_info):
                             # 실제 예산 기반 주문 수량 계산 로직 추가 가능
                             time.sleep(0.05)  # 요청 제한 조절
                     except Exception as e:
-                        traceback.print_exc()
-                        send_simple_message(f'{traceback.print_exc()}')
+                        error_message = traceback.format_exc()
+                        if error_message:  # 예외 메시지가 비어있지 않은 경우
+                            send_simple_message(error_message)
                         pass
 
+                    df_execution, summary = client.get_daily_order_execution(cano, order_date_str, order_date_str)
+                    
                     order_data.append({
-                        'order_index': order_index+add_index,
                         'buy_order_date': order_date.strftime('%Y-%m-%d'),
                         symbol_var: symbol,
                         name_var: symbol_name,
@@ -1484,21 +1496,21 @@ def create_buy_order_data(investment_target, user_info):
                         'buy_order_price': buy_order_price,
                         'buy_order_qty': buy_order_qty,
                         'real_buy_date': None,
-                        'real_buy_price': None,
-                        'real_buy_qty': None,
+                        'real_buy_price': 0,
+                        'real_buy_qty': 0,
                         'sell_order_date': None,
-                        'sell_order_number': None,
-                        'sell_order_price': None,
-                        'sell_order_qty' : None,
+                        'sell_order_number': 0,
+                        'sell_order_price': 0,
+                        'sell_order_qty' : 0,
                         'maturity_date': None,
                         'real_sell_signal':None,
                         'real_sell_date': None,
-                        'real_sell_price': None,
-                        'real_sell_qty': None,
-                        'real_revenue': None,
-                        'real_revenue_rate': None,
-                        'real_revenue_per_days_held': None,
-                        'real_days_held' : None,
+                        'real_sell_price': 0,
+                        'real_sell_qty': 0,
+                        'real_revenue': 0,
+                        'real_revenue_rate': 0,
+                        'real_revenue_per_days_held': 0,
+                        'real_days_held' : 0,
                         'trade_result': None,
                         'investment_target': investment_target,
                         type_var : symbol_type,
@@ -1577,6 +1589,31 @@ def run_buy_order():
             traceback.print_exc()
             pass
 
+
+# DataFrame을 Google Sheet에 업로드
+def upload_to_google_sheet(df, gs_url):
+    sh = gc.open_by_url(gs_url)
+    worksheet = sh.sheet1  # 첫 번째 워크시트 선택
+
+    # NaN, inf, -inf, NaT 값을 적절히 변환
+    df = df.replace([float('inf'), float('-inf')], None)
+    df = df.fillna('')  # NaN을 빈 문자열로 대체
+
+    # DataFrame.map을 사용하여 NaT 및 기타 NaN 값 처리
+    df = df.map(lambda x: '' if pd.isna(x) else x)
+
+    # DataFrame.map을 사용하여 Timestamp 객체를 문자열로 변환
+    df = df.map(lambda x: x.isoformat() if isinstance(x, pd.Timestamp) else x)
+
+    worksheet.clear()  # 기존 데이터 삭제
+
+    # DataFrame 헤더와 데이터를 리스트 형태로 변환
+    data = [df.columns.values.tolist()] + df.values.tolist()
+
+    # 데이터 업로드
+    worksheet.update(data)
+
+
 @log_function_call
 def check_buy_order_execution(user_info):
     
@@ -1589,6 +1626,8 @@ def check_buy_order_execution(user_info):
     check_start_date_str = check_start_date.strftime('%Y%m%d')
 
     cano = user_info['CANO']
+    gs_url = user_info['gs_url']
+
     df_execution, summary_dict = client.get_daily_order_execution(cano, check_start_date_str, check_end_date_str)
     
     if len(df_execution) > 0:
@@ -1613,7 +1652,9 @@ def check_buy_order_execution(user_info):
                         if 'holding_days' in col:
                             df_real_history['holding_days'] = pd.to_numeric(df_real_history['holding_days'], errors='coerce').fillna(0).astype(int)
                 except Exception as e:
-                    send_simple_message(f'{traceback.print_exc()}')
+                    error_message = traceback.format_exc()
+                    if error_message:  # 예외 메시지가 비어있지 않은 경우
+                        send_simple_message(error_message)
                     pass
         else:
             return None
@@ -1640,10 +1681,13 @@ def check_buy_order_execution(user_info):
                     
 
         df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
+        upload_to_google_sheet(df_real_history, gs_url)
 
         return df_real_history
     except:
-        send_simple_message(f'{traceback.print_exc()}')
+        error_message = traceback.format_exc()
+        if error_message:  # 예외 메시지가 비어있지 않은 경우
+            send_simple_message(error_message)
         pass
 
 @log_function_call
@@ -1674,7 +1718,7 @@ def create_sell_order_data(user_info):
                         real_buy_qty = str(int(float(x['real_buy_qty'])))
                         maturity_date = pd.Timestamp(x['maturity_date'])
                         target_return = x['target_return']
-                        stop_loss_cci_threshold = x['stop_loss_cci_threshold']
+                        stop_loss_cci_threshold = float(x['stop_loss_cci_threshold'])
 
                         target_return_rate = (float(target_return) + tax_rate + fee_rate) / 100
                         target_price = int(round(float(real_buy_price) * (1 + target_return_rate), 0))
@@ -1689,7 +1733,19 @@ def create_sell_order_data(user_info):
                         df_price[daily_trade_stock_var] = df_price[is_volume_uppercase]
                         df_price[date_var] = pd.to_datetime(df_price[date_var], errors='coerce', format='ISO8601')
 
+                        last_close_price = df_price[close_pr_var].iloc[-1]
+                        
+                        # 만약 배열(numpy.ndarray)일 경우 스칼라 값으로 변환
+                        if isinstance(last_close_price, np.ndarray):
+                            last_close_price = last_close_price.item()
+
+
                         df_cci = create_new_cci_data(df_price)
+
+                        last_cci_value = df_cci[close_cci_index_var].iloc[-1]
+                        # 만약 배열(numpy.ndarray)일 경우 스칼라 값으로 변환
+                        if isinstance(last_cci_value, np.ndarray):
+                            last_cci_value = last_cci_value.item()
 
                         sell_order_date = None
                         sell_order_number = ''
@@ -1711,12 +1767,12 @@ def create_sell_order_data(user_info):
                                 real_sell_signal = 'maturity'
                                 sell_order_date = datetime.now().strftime('%Y-%m-%d')
                             else:
-                                if df_price[close_pr_var].iloc[-1] > target_price:
+                                if last_close_price > target_price:
                                     result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
                                     sell_order_number = str(int(result['odno']))
                                     real_sell_signal = 'reach_target'
                                     sell_order_date = datetime.now().strftime('%Y-%m-%d')
-                                elif df_cci[close_cci_index_var].iloc[-1] <= stop_loss_cci_threshold:
+                                elif last_cci_value <= stop_loss_cci_threshold:
                                     result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
                                     sell_order_number = str(int(result['odno']))
                                     real_sell_signal = 'stop_loss'
@@ -1724,13 +1780,14 @@ def create_sell_order_data(user_info):
 
                                 df_real_history.loc[i, 'sell_order_date'] = sell_order_date
                                 df_real_history.loc[i, 'sell_order_number'] = sell_order_number
-                                df_real_history.loc[i, 'sell_order_price'] = float(sell_order_price)
-                                df_real_history.loc[i, 'sell_order_qty'] = float(sell_order_qty)
+                                df_real_history.loc[i, 'sell_order_price'] = round(float(sell_order_price), 2)
+                                df_real_history.loc[i, 'sell_order_qty'] = round(float(sell_order_qty), 2)
                                 df_real_history.loc[i, 'real_sell_signal'] = real_sell_signal
                             
                         except Exception as e:
-                            traceback.print_exc()
-                            send_simple_message(f'{traceback.print_exc()}')
+                            error_message = traceback.format_exc()
+                            if error_message:  # 예외 메시지가 비어있지 않은 경우
+                                send_simple_message(error_message)
                             pass
 
                     df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
@@ -1753,9 +1810,14 @@ def check_sell_order_execution(user_info):
     client = KISAPIClient(user_info)
 
     cano = user_info['CANO']
-    execute_date_str = datetime.now().strftime('%Y%m%d')
+    gs_url = user_info['gs_url']
+    end_date = datetime.now()
+    start_date = datetime.now() - timedelta(days=90)
+
+    end_date_str = end_date.strftime('%Y%m%d')
+    start_date_str = start_date.strftime('%Y%m%d')
     
-    df_execution, summary_dict = client.get_daily_order_execution(cano, execute_date_str, execute_date_str)
+    df_execution, summary_dict = client.get_daily_order_execution(cano, start_date_str, end_date_str)
     
     if len(df_execution) > 0:
         df_execution['odno'] = df_execution['odno'].astype('int64').astype(str)
@@ -1828,6 +1890,7 @@ def check_sell_order_execution(user_info):
                 traceback.print_exc()
 
     df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
+    upload_to_google_sheet(df_real_history, gs_url)
 
     return df_real_history
 
