@@ -1333,6 +1333,7 @@ def get_candidate_list(investment_target, csv_paths):
 
 @log_function_call
 def create_buy_order_data(investment_target, user_info):
+    
 
     client = KISAPIClient(user_info)
 
@@ -1361,10 +1362,10 @@ def create_buy_order_data(investment_target, user_info):
         df_cci = pd.read_csv(f'{daily_cci_index_csvs_path}/kr_cci_symbol_{symbol}.csv', dtype=str)
         pre_open_cci = float(df_cci.iloc[-1][open_cci_index_var])
         condition_buy_cci_threshold = float(df_recent[df_recent[symbol_var] == symbol]['condition_buy_cci_threshold'].iloc[-1])
-        win_rate = float(df_recent[df_recent[symbol_var] == symbol]['win_rate'].iloc[-1]  )
-        count_win = float(df_recent[df_recent[symbol_var] == symbol]['count_win'].iloc[-1])
-        avg_days_held = float(df_recent[df_recent[symbol_var] == symbol]['avg_days_held'].iloc[-1])
-        revenue_rate = float(df_recent[df_recent[symbol_var] == symbol]['revenue_rate'].iloc[-1])
+        win_rate = round(float(df_recent[df_recent[symbol_var] == symbol]['win_rate'].iloc[-1]),1)
+        count_win = round(float(df_recent[df_recent[symbol_var] == symbol]['count_win'].iloc[-1]),1)
+        avg_days_held = round(float(df_recent[df_recent[symbol_var] == symbol]['avg_days_held'].iloc[-1]),0)
+        revenue_rate = round(float(df_recent[df_recent[symbol_var] == symbol]['revenue_rate'].iloc[-1]),1)
 
         r_dict = {
                 symbol_var: symbol,
@@ -1401,6 +1402,8 @@ def create_buy_order_data(investment_target, user_info):
 
         order_date = datetime.now()
         order_date_str = order_date.strftime('%Y%m%d')
+
+        current_buy_signal_symbol = []
         
         for symbol in candidate_list:
             add_index = int(candidate_list.index(symbol)) + 1
@@ -1449,7 +1452,8 @@ def create_buy_order_data(investment_target, user_info):
                     yesterday_open_cci < condition_params["buy_cci_threshold"]
                     and current_open_cci >= condition_params["buy_cci_threshold"]
                 ):
-                    send_simple_message(f'{candidate_list.index(symbol)}, symbol: {symbol}, symbol_name: {symbol_name}, 전날 CCI: {yesterday_open_cci}, 오늘 CCI: {current_open_cci}, 매수 기준 CCI: {condition_params["buy_cci_threshold"]}, 매수조건 성립여부 :  {yesterday_open_cci < condition_params["buy_cci_threshold"] and current_open_cci >= condition_params["buy_cci_threshold"]}')
+                    current_buy_signal_symbol.append(symbol)
+                    send_simple_message(f'cano: {cano}, symbol: {symbol}, symbol_name: {symbol_name}, 전날 CCI: {yesterday_open_cci}, 오늘 CCI: {current_open_cci}, 매수 기준 CCI: {condition_params["buy_cci_threshold"]}, 매수조건 성립여부 :  {yesterday_open_cci < condition_params["buy_cci_threshold"] and current_open_cci >= condition_params["buy_cci_threshold"]}')
                     buy_order_price = df_current[close_pr_var]
                     buy_order_qty = None  
                     buy_order_number = None
@@ -1460,8 +1464,12 @@ def create_buy_order_data(investment_target, user_info):
                         target_budget = 0
 
                         if budget is not None:
-                            if budget < 1000000:  # 예산이 100만원 미만이면 종목 당 1개 주문
-                                buy_order_qty = 1
+                            if budget < 1000000:  
+                                if cano == '64356497': # 예산이 100만원 미만이면 첫 번째 추천 주식에 모든 예산 투자
+                                    target_budget = int(float(budget * 1))
+                                    buy_order_qty = int(round(float(target_budget) / float(buy_order_price), 0))
+                                else:
+                                    buy_order_qty = 1
                             else: # 예산이 100만원 이상이면 종목 당 예산의 10% 주문
                                 target_budget = int(float(budget * 0.1))
                                 buy_order_qty = int(round(float(target_budget) / float(buy_order_price), 0))
@@ -1481,6 +1489,8 @@ def create_buy_order_data(investment_target, user_info):
                     except Exception as e:
                         error_message = traceback.format_exc()
                         if error_message:  # 예외 메시지가 비어있지 않은 경우
+                            message_1 = f'{cano} {symbol} {symbol_name} 주문 중 오류 발생'
+                            send_simple_message(message_1)
                             send_simple_message(error_message)
                         pass
 
@@ -1519,6 +1529,9 @@ def create_buy_order_data(investment_target, user_info):
             except Exception as e:
                 traceback.print_exc()
                 continue
+
+        count_current_buy_signal_symbol = len(current_buy_signal_symbol)
+        send_simple_message('매수 신호 발생 종목 수 : ' + str(count_current_buy_signal_symbol))
 
         df_order = pd.DataFrame(order_data)
 
@@ -1581,6 +1594,7 @@ def run_buy_order():
                 for user_info in user_info_list:
                     try:
                         df_updated = create_buy_order_data(investment_target=investment_target, user_info=user_info)
+                        df_real_history = check_buy_order_execution(user_info)
                     except:
                         traceback.print_exc()
                         pass
@@ -1679,6 +1693,9 @@ def check_buy_order_execution(user_info):
                         maturity_date = order_date + timedelta(days=int(df_real_history[condition]['holding_days'].iloc[0]))
                         df_real_history.loc[condition, 'maturity_date'] = maturity_date.strftime('%Y-%m-%d')
                     
+        move_front_columns = ['buy_order_date', 'symbol', 'name', 'win_rate', 'investment_target', 'trade_result', 'real_revenue', 'real_revenue_rate']
+        columns = move_front_columns + [col for col in df_real_history if col not in move_front_columns]
+        df_real_history = df_real_history[columns]
 
         df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
         upload_to_google_sheet(df_real_history, gs_url)
@@ -1713,6 +1730,7 @@ def create_sell_order_data(user_info):
 
                     for i, x in df_possible_sell_order.iterrows():
                         symbol = x[symbol_var]
+                        symbol_name = x[name_var]
                         
                         real_buy_price = x['real_buy_price']
                         real_buy_qty = str(int(float(x['real_buy_qty'])))
@@ -1747,7 +1765,7 @@ def create_sell_order_data(user_info):
                         if isinstance(last_cci_value, np.ndarray):
                             last_cci_value = last_cci_value.item()
 
-                        sell_order_date = None
+                        sell_order_date = datetime.now().strftime('%Y-%m-%d')
                         sell_order_number = ''
                         real_sell_signal = None
                         sell_order_price = '0'
@@ -1763,30 +1781,30 @@ def create_sell_order_data(user_info):
                         try:
                             if today_date >= maturity_date:
                                 result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
-                                sell_order_number = str(int(result['odno']))
+                                sell_order_number = str(int(result['ODNO']))
                                 real_sell_signal = 'maturity'
-                                sell_order_date = datetime.now().strftime('%Y-%m-%d')
                             else:
                                 if last_close_price > target_price:
                                     result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
-                                    sell_order_number = str(int(result['odno']))
+                                    send_simple_message(f'symbol: {symbol}, {last_close_price} > {target_price}, result: {result}')
+                                    sell_order_number = str(int(result['ODNO']))
                                     real_sell_signal = 'reach_target'
-                                    sell_order_date = datetime.now().strftime('%Y-%m-%d')
                                 elif last_cci_value <= stop_loss_cci_threshold:
                                     result = client.place_order(PDNO=symbol, CANO=cano, ORD_DVSN=ORD_DVSN, ORD_QTY=real_buy_qty, ORD_UNPR=sell_order_price, order_type='sell')
-                                    sell_order_number = str(int(result['odno']))
+                                    sell_order_number = str(int(result['ODNO']))
                                     real_sell_signal = 'stop_loss'
-                                    sell_order_date = datetime.now().strftime('%Y-%m-%d')
 
-                                df_real_history.loc[i, 'sell_order_date'] = sell_order_date
-                                df_real_history.loc[i, 'sell_order_number'] = sell_order_number
-                                df_real_history.loc[i, 'sell_order_price'] = round(float(sell_order_price), 2)
-                                df_real_history.loc[i, 'sell_order_qty'] = round(float(sell_order_qty), 2)
-                                df_real_history.loc[i, 'real_sell_signal'] = real_sell_signal
+                            df_real_history.loc[i, 'sell_order_date'] = sell_order_date
+                            df_real_history.loc[i, 'sell_order_number'] = sell_order_number
+                            df_real_history.loc[i, 'sell_order_price'] = round(float(sell_order_price), 2)
+                            df_real_history.loc[i, 'sell_order_qty'] = round(float(sell_order_qty), 2)
+                            df_real_history.loc[i, 'real_sell_signal'] = real_sell_signal
                             
                         except Exception as e:
                             error_message = traceback.format_exc()
                             if error_message:  # 예외 메시지가 비어있지 않은 경우
+                                message_1 = f'{cano} symbol: {symbol}({symbol_name}) 주문 중 오류 발생'
+                                send_simple_message(message_1)
                                 send_simple_message(error_message)
                             pass
 
@@ -1841,12 +1859,16 @@ def check_sell_order_execution(user_info):
     for i, x in df_real_history.iterrows():
         real_buy_date = x['real_buy_date']
         real_buy_price = x['real_buy_price']
+        maturity_date = x['maturity_date']
+
         if pd.isna(real_buy_price):
             pass
         else:
             real_buy_price = int(float(real_buy_price))
         
         sell_order_number = x['sell_order_number']
+        
+        trade_result = None
         
         if pd.isna(sell_order_number):
             pass
@@ -1860,20 +1882,30 @@ def check_sell_order_execution(user_info):
                         df_real_sell = df_filtered.iloc[0].copy()
                         df_real_sell['ord_dt'] = pd.to_datetime(df_real_sell['ord_dt'], errors='coerce', format='ISO8601')
                         
+                        
                         real_sell_date = df_real_sell['ord_dt']
                         sell_order_number = int(df_real_sell['odno'])
                         sell_buy_dvsn_cd = df_real_sell['sll_buy_dvsn_cd']  # 01 매수, 02 매도
                         real_sell_qty = int(round(float(df_real_sell['tot_ccld_qty']), 0))  # 총체결수량
                         real_sell_price = int(round(float(df_real_sell['avg_prvs']), 0))  # 체결평균가
+                        if real_sell_date >= maturity_date:
+                            trade_result = 'maturity'
+                        else:
+                            if real_sell_price > real_buy_price:
+                                trade_result = 'reach_target'
+                            else:
+                                trade_result = 'stop_loss'
                         
                         fee_amount = round(((real_sell_price) * (fee_rate)), 0)
                         tax_amount = round(((real_sell_price) * (tax_rate)), 0)
                         real_revenue = int((real_sell_price - real_buy_price) - (fee_amount + tax_amount))
                         
-                        real_revenue_rate = (real_revenue / real_buy_price) * 100
+                        real_revenue_rate = round(float((real_revenue / real_buy_price) * 100), 2)
                         
                         real_days_held = (real_sell_date - real_buy_date).days + 1
                         real_revenue_per_days_held = round(float(real_revenue / real_days_held), 2)
+
+                        
 
                         if sell_buy_dvsn_cd == '01':  # 01 매도
                             df_real_history.loc[i, 'real_sell_date'] = real_sell_date.strftime('%Y-%m-%d')
@@ -1883,12 +1915,15 @@ def check_sell_order_execution(user_info):
                             df_real_history.loc[i, 'real_revenue_rate'] = real_revenue_rate
                             df_real_history.loc[i, 'real_revenue_per_days_held'] = real_revenue_per_days_held
                             df_real_history.loc[i, 'real_days_held'] = real_days_held
+                            df_real_history.loc[i, 'trade_result'] = trade_result
                     else:
                         print(f"No matching execution found for sell_order_number: {sell_order_number}")
             except Exception as e:
                 print(f"Error processing sell order number: {sell_order_number}")
                 traceback.print_exc()
-
+    move_front_columns = ['buy_order_date', 'symbol', 'name', 'win_rate', 'investment_target', 'trade_result', 'real_revenue', 'real_revenue_rate']
+    columns = move_front_columns + [col for col in df_real_history if col not in move_front_columns]
+    df_real_history = df_real_history[columns]
     df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
     upload_to_google_sheet(df_real_history, gs_url)
 
