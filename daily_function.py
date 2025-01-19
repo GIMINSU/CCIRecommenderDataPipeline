@@ -1133,7 +1133,7 @@ def process_all_stocks_with_save_optimized(
     print(f"Completed. win_save_path: {win_save_path}, return_save_path: {return_save_path}, return_per_days_held_save_path: {return_per_days_held_save_path}")
 
     func_end_datetime = datetime.now()
-    message = f'End. process_all_stocks_with_save_optimized, Time: {func_end_datetime.strftime("%Y-%m-%d %H:%M:%S")}, running minutes: {int((func_end_datetime - func_start_datetime).total_seconds() / 60)}'
+    message = f'End. process_all_stocks_with_save_optimized, DF length: {len(final_best_win_df)}Time: {func_end_datetime.strftime("%Y-%m-%d %H:%M:%S")}, running minutes: {int((func_end_datetime - func_start_datetime).total_seconds() / 60)}'
     send_simple_message(message)
     print(message)
 
@@ -1696,6 +1696,8 @@ def check_buy_order_execution(user_info):
         move_front_columns = ['buy_order_date', 'symbol', 'name', 'win_rate', 'investment_target', 'trade_result', 'real_revenue', 'real_revenue_rate']
         columns = move_front_columns + [col for col in df_real_history if col not in move_front_columns]
         df_real_history = df_real_history[columns]
+
+        df_real_history = df_real_history[df_real_history['real_buy_qty'] > 0].reset_index(drop=True)
 
         df_real_history.to_csv(save_path, index=False, encoding='utf-8-sig', quoting=1)
         upload_to_google_sheet(df_real_history, gs_url)
